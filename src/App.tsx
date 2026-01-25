@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Trash2 } from 'lucide-react';
 import { usePackerStore } from '@/stores/usePackerStore';
 
+
 function App() {
   // Activate the queue processor
   useQueueProcessor();
@@ -85,12 +86,12 @@ function App() {
         </div>
       </main>
 
-      {/* Terminal Drawer */}
       <TerminalDrawer
         job={selectedJob}
         isOpen={isDrawerOpen && !!selectedJob}
         onClose={() => setIsDrawerOpen(false)}
       />
+
     </div>
   );
 }

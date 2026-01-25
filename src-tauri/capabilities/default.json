@@ -7,17 +7,62 @@
   ],
   "permissions": [
     "core:default",
+    "shell:default",
     {
       "identifier": "shell:allow-execute",
       "allow": [
         {
           "name": "binaries/chdman",
-          "cmd": "program",
-          "sidecar": true
+          "sidecar": true,
+          "args": true
+        },
+        {
+          "name": "chmod",
+          "cmd": "chmod"
+        },
+        {
+          "name": "runtime-chdman",
+          "cmd": "",
+          "args": true
         }
       ]
     },
-    "shell:default",
-    "store:default"
+    "store:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        {
+          "url": "https://github.com/**"
+        },
+        {
+          "url": "https://objects.githubusercontent.com/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-read-text-file",
+      "allow": [
+        {
+          "path": "$APPLOCALDATA/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-write-file",
+      "allow": [
+        {
+          "path": "$APPLOCALDATA/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-exists",
+      "allow": [
+        {
+          "path": "$APPLOCALDATA/**"
+        }
+      ]
+    },
+    "os:default"
   ]
 }

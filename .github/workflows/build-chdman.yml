@@ -1,0 +1,203 @@
+name: Build chdman
+
+on:
+  workflow_dispatch:
+    inputs:
+      mame_ref:
+        description: 'MAME GitHub branch, tag, or SHA (e.g. "mame0281")'
+        required: true
+        type: string
+        default: 'mame0281'
+      auto-merge:
+        description: 'Auto-merge pull request?'
+        required: true
+        type: boolean
+        default: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Build options matching chdman-js
+  EMULATOR: 0
+  TOOLS: 1
+  TESTS: 0
+  IGNORE_GIT: 1
+  NOWERROR: 1
+  DEBUG: 0
+  SYMBOLS: 0
+  OPTIMIZE: s
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: mamedev/mame
+          ref: ${{ inputs.mame_ref }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes git build-essential python3 libsdl2-dev libsdl2-ttf-dev libfontconfig-dev libpulse-dev qtbase5-dev qtbase5-dev-tools
+
+      - name: Build
+        env:
+          TARGETOS: linux
+        run: make "-j$(nproc)" -r
+
+      - name: Strip binary
+        run: |
+          strip chdman
+          ls -l chdman
+
+      - name: Prepare Artifact
+        run: |
+          mkdir -p dist
+          mv chdman dist/chdman-x86_64-unknown-linux-gnu
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chdman-linux-x86_64
+          path: dist/chdman-x86_64-unknown-linux-gnu
+
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: mamedev/mame
+          ref: ${{ inputs.mame_ref }}
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: mingw64
+          install: git make mingw-w64-x86_64-gcc mingw-w64-x86_64-clang mingw-w64-x86_64-lld mingw-w64-x86_64-python
+          update: true
+
+      - name: Build
+        env:
+          OVERRIDE_CC: clang
+          OVERRIDE_CXX: clang++
+          ARCHOPTS: "-fuse-ld=lld"
+        run: make "-j$(nproc)" -r
+
+      - name: Strip binary
+        run: |
+          strip chdman.exe
+          ls -l chdman.exe
+
+      - name: Prepare Artifact
+        run: |
+          mkdir -p dist
+          mv chdman.exe dist/chdman-x86_64-pc-windows-msvc.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chdman-windows-x86_64
+          path: dist/chdman-x86_64-pc-windows-msvc.exe
+
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: mamedev/mame
+          ref: ${{ inputs.mame_ref }}
+
+      - name: Install dependencies
+        run: brew install --overwrite python3 sdl2
+
+      - name: Build
+        env:
+          USE_LIBSDL: 1
+        run: make "-j$(sysctl -n hw.physicalcpu)" -r
+
+      # Critical portability step from reference
+      - name: Make portable
+        run: |
+          set -x
+          otool -L chdman
+          otool -L chdman | awk '{print $1}' | grep -E "^$(brew --prefix)" | while read -r file; do
+            cp "${file}" ./
+            install_name_tool -change "${file}" "@executable_path/$(basename "${file}")" chdman
+          done
+          
+      - name: Strip binary
+        run: |
+          strip chdman
+          ls -l chdman
+
+      - name: Prepare Artifact
+        run: |
+          mkdir -p dist
+          mv chdman dist/chdman-aarch64-apple-darwin
+          # Copy any dylibs if they were bundled (chdman-js bundles them, but Tauri sidecar bundling of DLLs/dylibs is tricky.
+          # Ideally chdman should be static or we need to bundle libs. 
+          # The reference bundles .dylib files next to chdman.
+          # For now, let's grab them if they exist.
+          cp *.dylib dist/ 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chdman-macos-aarch64
+          path: dist/*
+
+  create-pr:
+    needs: [build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: temp_artifacts
+          merge-multiple: true
+
+      - name: Organize Binaries
+        run: |
+          mkdir -p src-tauri/binaries
+          cp temp_artifacts/* src-tauri/binaries/
+          # Ensure executable
+          chmod +x src-tauri/binaries/chdman*
+          ls -l src-tauri/binaries/
+
+      - name: Create Pull Request
+        id: cpr
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: update chdman binaries from ${{ inputs.mame_ref }}"
+          committer: GitHub <noreply@github.com>
+          author: ${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>
+          signoff: false
+          branch: update-chdman-${{ inputs.mame_ref }}
+          delete-branch: true
+          title: 'Update chdman binaries (${{ inputs.mame_ref }})'
+          body: |
+            Automated update of chdman binaries built from MAME ref: `${{ inputs.mame_ref }}`.
+            
+            Based on [chdman-js workflow](https://github.com/emmercm/chdman-js/blob/main/.github/workflows/mame-build.yml).
+            
+            Included binaries:
+            - Linux (x86_64)
+            - Windows (x86_64)
+            - macOS (ARM64)
+          labels: |
+            automated
+            binaries
+
+      - name: Auto-merge
+        if: ${{ inputs.auto-merge && steps.cpr.outputs.pull-request-number }}
+        run: gh pr merge "${{ steps.cpr.outputs.pull-request-number }}" --squash --auto
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

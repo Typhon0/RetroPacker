@@ -1,6 +1,7 @@
-import { Command } from '@tauri-apps/plugin-shell';
+
 import { Job, useQueueStore } from '../stores/useQueueStore';
 import { usePackerStore, CompressionPreset } from '../stores/usePackerStore';
+import { BinaryManagerService } from './BinaryManagerService';
 
 export class ChdmanService {
     /**
@@ -94,12 +95,13 @@ export class ChdmanService {
 
         const args = this.buildCommandArgs(job, outputDir, preset);
 
-        appendLog(job.id, `Starting job: chdman ${args.join(' ')}`);
-
         try {
-            const command = Command.sidecar('binaries/chdman', args);
+            appendLog(job.id, `Starting job: chdman ${args.join(' ')}`);
 
-            command.on('close', (data) => {
+            // Use the sidecar command via BinaryManagerService
+            const command = BinaryManagerService.createCommand(args);
+
+            command.on('close', (data: { code: number | null; signal: number | null }) => {
                 appendLog(job.id, `Process finished with code ${data.code}`);
                 if (data.code === 0) {
                     updateJob(job.id, { status: 'completed', progress: 100 });
@@ -108,12 +110,12 @@ export class ChdmanService {
                 }
             });
 
-            command.on('error', (error) => {
+            command.on('error', (error: unknown) => {
                 appendLog(job.id, `Error: ${error}`);
                 updateJob(job.id, { status: 'failed', errorMessage: String(error) });
             });
 
-            command.stdout.on('data', (line) => {
+            command.stdout.on('data', (line: string) => {
                 appendLog(job.id, line);
                 // Parse progress from stdout
                 // chdman output: "Compressing, 10.5% complete... (ratio=100.0%)"
@@ -124,7 +126,7 @@ export class ChdmanService {
                 }
             });
 
-            command.stderr.on('data', (line) => {
+            command.stderr.on('data', (line: string) => {
                 appendLog(job.id, `[stderr] ${line}`);
             });
 

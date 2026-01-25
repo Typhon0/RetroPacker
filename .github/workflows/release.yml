@@ -46,22 +46,10 @@ jobs:
       - name: install frontend dependencies
         run: npm install
 
-      # Downloads the chdman binaries from a hypothetical location or creates placeholders
-      # In production, you would download from a secure text/S3 or check them into git (if allowed)
-      - name: Create Dummy Binaries (if missing)
-        shell: bash
-        run: |
-          mkdir -p src-tauri/binaries
-          touch src-tauri/binaries/chdman-x86_64-pc-windows-msvc.exe
-          touch src-tauri/binaries/chdman-x86_64-unknown-linux-gnu
-          touch src-tauri/binaries/chdman-x86_64-apple-darwin
-          touch src-tauri/binaries/chdman-aarch64-apple-darwin
-          chmod +x src-tauri/binaries/*
-
       - name: Check binaries
         shell: bash
         run: |
-          ls -R src-tauri/binaries || echo "Binaries folder empty or missing!"
+          ls -R src-tauri/binaries || echo "Binaries should be in repo!"
 
       - uses: tauri-apps/tauri-action@v0
         env:
