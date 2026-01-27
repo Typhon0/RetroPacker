@@ -6,13 +6,14 @@ import { dirname } from '@tauri-apps/api/path';
 
 export function useQueueProcessor() {
     const queue = useQueueStore((state) => state.queue);
+    const isProcessing = useQueueStore((state) => state.isProcessing);
     const concurrency = usePackerStore((state) => state.concurrency);
 
     useEffect(() => {
         const processQueue = async () => {
             const processingCount = queue.filter((j) => j.status === 'processing').length;
 
-            if (processingCount < concurrency) {
+            if (isProcessing && processingCount < concurrency) {
                 // Find next pending job
                 const nextJob = queue.find((j) => j.status === 'pending');
 
@@ -33,5 +34,5 @@ export function useQueueProcessor() {
         };
 
         processQueue();
-    }, [queue, concurrency]);
+    }, [queue, concurrency, isProcessing]);
 }

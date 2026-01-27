@@ -14,15 +14,19 @@ export interface Job {
     outputLog: string[];
     errorMessage?: string;
     strategy: 'createcd' | 'createdvd' | 'raw';
+    startTime?: number;
+    etaSeconds?: number;
 }
 
 interface QueueState {
     queue: Job[];
+    isProcessing: boolean;
     addJob: (job: Job) => void;
     removeJob: (id: string) => void;
     updateJob: (id: string, updates: Partial<Job>) => void;
     clearQueue: () => void;
     appendLog: (id: string, line: string) => void;
+    setProcessing: (isProcessing: boolean) => void;
 }
 
 export const useQueueStore = create<QueueState>((set) => ({
@@ -40,4 +44,6 @@ export const useQueueStore = create<QueueState>((set) => ({
                 j.id === id ? { ...j, outputLog: [...j.outputLog, line] } : j
             ),
         })),
+    isProcessing: false,
+    setProcessing: (isProcessing) => set({ isProcessing }),
 }));

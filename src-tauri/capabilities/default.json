@@ -8,6 +8,8 @@
   "permissions": [
     "core:default",
     "shell:default",
+    "dialog:default",
+    "notification:default",
     {
       "identifier": "shell:allow-execute",
       "allow": [
@@ -19,6 +21,21 @@
         {
           "name": "chmod",
           "cmd": "chmod"
+        },
+        {
+          "name": "runtime-chdman",
+          "cmd": "",
+          "args": true
+        }
+      ]
+    },
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "binaries/chdman",
+          "sidecar": true,
+          "args": true
         },
         {
           "name": "runtime-chdman",
@@ -40,6 +57,48 @@
       ]
     },
     {
+      "identifier": "fs:allow-read-file",
+      "allow": [
+        {
+          "path": "$APPLOCALDATA/**"
+        },
+        {
+          "path": "D:\\Games/**"
+        },
+        {
+          "path": "**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-read-dir",
+      "allow": [
+        {
+          "path": "$APPLOCALDATA/**"
+        },
+        {
+          "path": "D:\\Games/**"
+        },
+        {
+          "path": "**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-stat",
+      "allow": [
+        {
+          "path": "$APPLOCALDATA/**"
+        },
+        {
+          "path": "D:\\Games/**"
+        },
+        {
+          "path": "**"
+        }
+      ]
+    },
+    {
       "identifier": "fs:allow-read-text-file",
       "allow": [
         {
@@ -52,6 +111,12 @@
       "allow": [
         {
           "path": "$APPLOCALDATA/**"
+        },
+        {
+          "path": "D:\\Games/**"
+        },
+        {
+          "path": "**"
         }
       ]
     },
@@ -60,6 +125,12 @@
       "allow": [
         {
           "path": "$APPLOCALDATA/**"
+        },
+        {
+          "path": "D:\\Games/**"
+        },
+        {
+          "path": "**"
         }
       ]
     },
