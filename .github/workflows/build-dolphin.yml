@@ -1,0 +1,203 @@
+name: Dolphin Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      dolphin_ref:
+        description: 'Dolphin GitHub tag/sha (e.g. "5.0-21460")'
+        required: true
+        type: string
+        default: 'master'
+      auto-merge:
+        description: 'Auto-merge pull request?'
+        required: true
+        type: boolean
+        default: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  DOLPHIN_REF: ${{ inputs.dolphin_ref }}
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: dolphin-emu/dolphin
+          ref: ${{ env.DOLPHIN_REF }}
+          submodules: 'recursive'
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config libusb-1.0-0-dev libudev-dev
+      
+      - name: Build
+        run: |
+          mkdir build && cd build
+          cmake \
+            -DENABLE_CLI_TOOL=ON \
+            -DUSE_SYSTEM_LIBS=OFF \
+            -DENABLE_QT=OFF \
+            -DENABLE_ALSA=OFF \
+            -DENABLE_PULSEAUDIO=OFF \
+            -DENABLE_VULKAN=OFF \
+            -DENABLE_SDL=OFF \
+            -DENABLE_AUTOUPDATE=OFF \
+            -DUSE_DISCORD_PRESENCE=OFF \
+            -DUSE_UPNP=OFF \
+            ..
+          make -j$(nproc)
+          
+      - name: Prepare Artifact
+        run: |
+          mkdir -p artifacts
+          # Rename to CamelCase to match our Tauri config
+          cp build/Binaries/dolphin-tool artifacts/DolphinTool
+          strip artifacts/DolphinTool
+          
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64
+          path: artifacts/DolphinTool
+          if-no-files-found: error
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: dolphin-emu/dolphin
+          ref: ${{ env.DOLPHIN_REF }}
+          submodules: 'recursive'
+      
+      - name: Install dependencies
+        run: brew install cmake
+      
+      - name: Build
+        run: |
+          mkdir build && cd build
+          cmake \
+            -DENABLE_CLI_TOOL=ON \
+            -DUSE_SYSTEM_LIBS=OFF \
+            -DENABLE_QT=OFF \
+            -DENABLE_SDL=OFF \
+            -DENABLE_AUTOUPDATE=OFF \
+            -DSKIP_POSTPROCESS_BUNDLE=true \
+            ..
+          make -j$(sysctl -n hw.physicalcpu)
+          
+      - name: Prepare Artifact (Intel/ARM Universal or Host Arch)
+        run: |
+          mkdir -p artifacts
+          # Check arch
+          file build/Binaries/dolphin-tool
+          cp build/Binaries/dolphin-tool artifacts/DolphinTool
+          strip artifacts/DolphinTool
+          
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-universal
+          path: artifacts/DolphinTool
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: dolphin-emu/dolphin
+          ref: ${{ env.DOLPHIN_REF }}
+          submodules: 'recursive'
+      
+      - uses: microsoft/setup-msbuild@v2
+      
+      - name: Build
+        run: |
+          msbuild Source/dolphin-emu.sln -maxcpucount /property:Configuration=Release /property:Platform=x64
+          
+      - name: Prepare Artifact
+        run: |
+          mkdir artifacts
+          copy Binary\x64\DolphinTool.exe artifacts\DolphinTool.exe
+          
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: artifacts/DolphinTool.exe
+          if-no-files-found: error
+
+  git-update:
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download Linux
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-x64
+          path: downloads/linux
+          
+      - name: Download macOS
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-universal
+          path: downloads/macos
+          
+      - name: Download Windows
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-x64
+          path: downloads/windows
+          
+      - name: Organize Binaries for Tauri
+        run: |
+          mkdir -p src-tauri/binaries
+          
+          # Linux x64
+          cp downloads/linux/DolphinTool src-tauri/binaries/DolphinTool-x86_64-unknown-linux-gnu
+          
+          # Windows x64
+          cp downloads/windows/DolphinTool.exe src-tauri/binaries/DolphinTool-x86_64-pc-windows-msvc.exe
+          
+          # macOS (Currently assuming x64 host is building x64 or universal. 
+          # You might need separate arm64 build for M1/M2 native, or use universal binary.)
+          # For now, mapping to both for safety if universal, or just one if not.
+          # GitHub Actions macOS runners are ARM64 by default for macos-14+, but intel for macos-13/12.
+          # We used 'macos-latest' (usually 14/arm64 now).
+          
+          cp downloads/macos/DolphinTool src-tauri/binaries/DolphinTool-x86_64-apple-darwin
+          cp downloads/macos/DolphinTool src-tauri/binaries/DolphinTool-aarch64-apple-darwin
+          
+          chmod +x src-tauri/binaries/*
+          ls -R src-tauri/binaries
+          
+      - id: commit
+        run: |
+          git config --global user.email "bot@retropacker.com"
+          git config --global user.name "RetroPacker Bot"
+          
+          git add src-tauri/binaries
+          
+          VERSION="dolphin-${{ inputs.dolphin_ref }}-$(date +'%Y%m%d')"
+          echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
+          
+          git commit -m "chore: update DolphinTool binaries (${VERSION})" || echo "No changes"
+          
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          commit-message: "chore: update DolphinTool binaries ${{ steps.commit.outputs.VERSION }}"
+          title: "Update DolphinTool (${{ steps.commit.outputs.VERSION }})"
+          branch: update-dolphin-binaries
+          delete-branch: true
