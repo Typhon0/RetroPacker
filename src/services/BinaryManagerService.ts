@@ -14,9 +14,11 @@ export class BinaryManagerService {
 		args: string[],
 	): Command<string> {
 		// mapped in tauri.conf.json -> externalBin
-		// e.g. "binaries/chdman", "binaries/dolphintool"
-		// Note regarding case: The tauri conf typically maps "binaries/dolphintool" to the actual executable.
-		return Command.sidecar(`binaries/${binary}`, args);
+		const binaryMap: Record<string, string> = {
+			chdman: "binaries/chdman",
+			dolphintool: "binaries/DolphinTool", // Matches config exactly
+		};
+		return Command.sidecar(binaryMap[binary], args);
 	}
 
 	/**

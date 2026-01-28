@@ -573,7 +573,8 @@ export function InfoViewer() {
 														>
 															{gameInfo.chdStats.compression
 																?.split(",")
-																.map((c) => c.split(" ")[0])
+																.map((c) => c.trim().split(" ")[0])
+																.filter((c) => c !== "")
 																.join(", ")}
 														</span>
 													</div>

@@ -338,8 +338,9 @@ export class MetadataService {
 		const base = `https://raw.githubusercontent.com/libretro-thumbnails/${repo}/master/Named_Boxarts`;
 
 		// Generate Candidates
+		// Recursively remove extensions to handle "game.cue.chd" -> "game"
 		const cleanName = filename.replace(
-			/\.(iso|bin|cue|chd|rvz|gcz|wbfs|gcm|gdi)$/i,
+			/(?:\.(iso|bin|cue|chd|rvz|gcz|wbfs|gcm|gdi|toc|nkit))+$/i,
 			"",
 		);
 
