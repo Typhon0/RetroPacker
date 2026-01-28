@@ -20,6 +20,9 @@ export class MetadataService {
 	/**
 	 * 🕵️ SYSTEM DETECTION
 	 * Centralized async detection with header fallback
+	 * Note: Domain logic is primarily in DetectSystemUseCase.
+	 * This method is kept for service-level utilities if needed, 
+	 * but largely mirrors the UseCase logic for consistency.
 	 */
 	static async detectSystemAsync(filePath: string): Promise<string> {
 		const ext = filePath.split(".").pop()?.toLowerCase() || "";
@@ -50,8 +53,14 @@ export class MetadataService {
 			try {
 				const { open } = await import("@tauri-apps/plugin-fs");
 				file = await open(filePath, { read: true });
-				const buffer = new Uint8Array(32);
+				// Read enough for PSP header (0x8000)
+				const buffer = new Uint8Array(32768 + 64);
 				await file.read(buffer);
+
+				// PSP Magic: "PSP GAME" at offset 0x8000 (32768)
+				if (buffer[0x8000] === 0x50 && buffer[0x8001] === 0x53 && buffer[0x8002] === 0x50) {
+					return "PSP";
+				}
 
 				// Wii Magic (0x5D1C9EA3)
 				if (buffer[24] === 0x5d && buffer[25] === 0x1c && buffer[26] === 0x9e)
@@ -76,6 +85,7 @@ export class MetadataService {
 		// 3. Path Fallback
 		if (lowerPath.includes("gamecube")) return "GameCube";
 		if (lowerPath.includes("wii")) return "Wii";
+		if (lowerPath.includes("psp")) return "PSP";
 		if (lowerPath.includes("ps2")) return "PS2";
 		if (lowerPath.includes("psx") || lowerPath.includes("ps1")) return "PS1";
 
@@ -171,6 +181,9 @@ export class MetadataService {
 		if (system === "GameCube" || system === "Wii") {
 			return this.extractNintendoGameId(filePath);
 		}
+		if (system === "PSP") {
+			return this.extractPSPGameId(filePath);
+		}
 		return this.extractPSGameId(filePath);
 	}
 
@@ -203,6 +216,15 @@ export class MetadataService {
 		} finally {
 			if (file) await file.close();
 		}
+	}
+
+	private static async extractPSPGameId(
+		filePath: string,
+	): Promise<string | null> {
+		// PSP ID is usually at offset 0x8000+ or in UMD_DATA.BIN
+		// But scanning the first 64KB typically catches the disc code like ULES-00123
+		// Re-using PS2 logic as the pattern is identical (ULES-12345)
+		return this.extractPSGameId(filePath);
 	}
 
 	private static async extractNintendoGameId(
@@ -257,7 +279,7 @@ export class MetadataService {
 		// 4. 🕸️ SCRAPING FALLBACK (Last Resort)
 		if (
 			gameId &&
-			(system === "Wii" || system === "GameCube" || system === "PS2")
+			(system === "Wii" || system === "GameCube" || system === "PS2" || system === "PSP")
 		) {
 			const scraped = await this.scrapeGameTDB(gameId, system);
 			if (scraped) return scraped;
@@ -435,6 +457,7 @@ export class MetadataService {
 		const map: Record<string, string> = {
 			PS1: "psx",
 			PS2: "ps2",
+			PSP: "psp",
 			GameCube: "wii",
 			Wii: "wii",
 			Dreamcast: "dc",
@@ -447,6 +470,7 @@ export class MetadataService {
 		const map: Record<string, string> = {
 			PS1: "Sony_-_PlayStation",
 			PS2: "Sony_-_PlayStation_2",
+			PSP: "Sony_-_PlayStation_Portable",
 			GameCube: "Nintendo_-_GameCube",
 			Wii: "Nintendo_-_Wii",
 			Dreamcast: "Sega_-_Dreamcast",
