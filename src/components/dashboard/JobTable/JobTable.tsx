@@ -270,9 +270,9 @@ export function JobTable({
 	);
 
 	return (
-		<div className="space-y-2">
+		<div className="space-y-2 flex flex-col h-full min-h-0">
 			{/* Filter Bar */}
-			<div className="flex items-center gap-2 flex-wrap">
+			<div className="flex items-center gap-2 flex-wrap flex-shrink-0">
 				<div className="flex items-center gap-2">
 					<Filter className="h-4 w-4 text-muted-foreground" />
 					<Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -315,10 +315,10 @@ export function JobTable({
 				</div>
 			</div>
 
-			{/* Table */}
-			<div className="rounded-md border bg-card overflow-hidden">
+			{/* Table Container */}
+			<div className="rounded-md border bg-card flex-1 overflow-y-auto min-h-0 relative">
 				<Table>
-					<TableHeader>
+					<TableHeader className="sticky top-0 bg-card z-10 shadow-sm">
 						<TableRow>
 							<TableHead className="w-[40px]"></TableHead>
 							<TableHead>Game / Folder</TableHead>

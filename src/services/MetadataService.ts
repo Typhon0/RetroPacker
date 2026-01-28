@@ -115,11 +115,6 @@ export class MetadataService {
 	 */
 	private static async parseChdInfo(_filePath: string): Promise<string | null> {
 		try {
-			// const stdout = await BinaryManagerService.execute("chdman", [
-			// 	"info",
-			// 	"-i",
-			// 	filePath,
-			// ]);
 			// CHD info typically requires extracting data to find the ID reliably.
 			// Current best practice for CHD is filename fuzzy matching unless we extract sectors.
 			return null;
