@@ -95,6 +95,7 @@ export class DetectSystemUseCase {
 			return "GameCube";
 		if (lowerName.includes("wii")) return "Wii";
 		if (lowerName.includes("ps2")) return "PS2";
+		if (lowerName.includes("psp")) return "PSP";
 		if (lowerName.includes("psx") || lowerName.includes("ps1")) return "PS1";
 
 		return "Unknown";
@@ -139,6 +140,7 @@ export class DetectSystemUseCase {
 			return "Wii";
 		if (lowerPath.includes("dreamcast")) return "Dreamcast";
 		if (lowerPath.includes("saturn")) return "Saturn";
+		if (lowerPath.includes("psp")) return "PSP";
 		if (lowerPath.includes("ps2") || lowerPath.includes("playstation 2"))
 			return "PS2";
 		if (
@@ -155,6 +157,7 @@ export class DetectSystemUseCase {
 	 */
 	private detectByFilename(filename: string): DetectedSystem {
 		const lowerName = filename.toLowerCase();
+		if (lowerName.includes("psp")) return "PSP";
 		if (lowerName.includes("ps2")) return "PS2";
 		if (lowerName.includes("psx") || lowerName.includes("ps1")) return "PS1";
 		return "Unknown";
@@ -169,14 +172,27 @@ export class DetectSystemUseCase {
 	): Promise<DetectedSystem> {
 		try {
 			const { fileSystem } = this.deps;
-			const buffer = await fileSystem.readBytes(filePath, 0, 32);
+			// Reading a larger chunk to cover PSP header location (0x8000)
+			const buffer = await fileSystem.readBytes(filePath, 0, 32768 + 64); // Read up to 0x8040 (32KB + some) to catch PSP header
 
-			// Get potential game ID (first 6 bytes)
+			// Get potential game ID (first 6 bytes) - offset 0
 			const gameId = new TextDecoder("ascii").decode(buffer.slice(0, 6));
 
 			console.log(
 				`[DetectSystemUseCase] Checking ISO header for ${filename}: GameID="${gameId}"`,
 			);
+
+			// PSP Magic: "PSP GAME" at offset 0x8000 (32768)
+			// Checking just "PSP" at 0x8000 for efficiency
+			const pspMagic = 
+				buffer[0x8000] === 0x50 && // 'P'
+				buffer[0x8001] === 0x53 && // 'S'
+				buffer[0x8002] === 0x50;   // 'P'
+
+			if (pspMagic) {
+				console.log("[DetectSystemUseCase] Detected PSP via Magic Bytes");
+				return "PSP";
+			}
 
 			// GameCube magic: 0xC2 0x33 0x9F 0x3D at offset 28
 			const magicGC =
