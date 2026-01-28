@@ -12,6 +12,7 @@ export const PLATFORM = {
 	AUTO: "auto",
 	PS1: "ps1",
 	PS2: "ps2",
+	PSP: "psp",
 	SATURN: "saturn",
 	DREAMCAST: "dreamcast",
 	GAMECUBE: "gamecube",
@@ -27,6 +28,7 @@ export type Platform = (typeof PLATFORM)[keyof typeof PLATFORM];
 export type DetectedSystem =
 	| "PS1"
 	| "PS2"
+	| "PSP"
 	| "Saturn"
 	| "Dreamcast"
 	| "GameCube"
@@ -74,6 +76,7 @@ export const PLATFORM_DISPLAY_NAMES: Record<Platform, string> = {
 	[PLATFORM.AUTO]: "Auto-Detect",
 	[PLATFORM.PS1]: "PlayStation 1",
 	[PLATFORM.PS2]: "PlayStation 2",
+	[PLATFORM.PSP]: "PlayStation Portable",
 	[PLATFORM.SATURN]: "Sega Saturn",
 	[PLATFORM.DREAMCAST]: "Sega Dreamcast",
 	[PLATFORM.GAMECUBE]: "Nintendo GameCube",
