@@ -1,139 +1,183 @@
 {
-  "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "Capability for the main window",
-  "windows": [
-    "main"
-  ],
-  "permissions": [
-    "core:default",
-    "shell:default",
-    "dialog:default",
-    "notification:default",
-    {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "name": "binaries/chdman",
-          "sidecar": true,
-          "args": true
-        },
-        {
-          "name": "chmod",
-          "cmd": "chmod"
-        },
-        {
-          "name": "runtime-chdman",
-          "cmd": "",
-          "args": true
-        }
-      ]
-    },
-    {
-      "identifier": "shell:allow-spawn",
-      "allow": [
-        {
-          "name": "binaries/chdman",
-          "sidecar": true,
-          "args": true
-        },
-        {
-          "name": "runtime-chdman",
-          "cmd": "",
-          "args": true
-        }
-      ]
-    },
-    "store:default",
-    {
-      "identifier": "http:default",
-      "allow": [
-        {
-          "url": "https://github.com/**"
-        },
-        {
-          "url": "https://objects.githubusercontent.com/**"
-        }
-      ]
-    },
-    {
-      "identifier": "fs:allow-read-file",
-      "allow": [
-        {
-          "path": "$APPLOCALDATA/**"
-        },
-        {
-          "path": "D:\\Games/**"
-        },
-        {
-          "path": "**"
-        }
-      ]
-    },
-    {
-      "identifier": "fs:allow-read-dir",
-      "allow": [
-        {
-          "path": "$APPLOCALDATA/**"
-        },
-        {
-          "path": "D:\\Games/**"
-        },
-        {
-          "path": "**"
-        }
-      ]
-    },
-    {
-      "identifier": "fs:allow-stat",
-      "allow": [
-        {
-          "path": "$APPLOCALDATA/**"
-        },
-        {
-          "path": "D:\\Games/**"
-        },
-        {
-          "path": "**"
-        }
-      ]
-    },
-    {
-      "identifier": "fs:allow-read-text-file",
-      "allow": [
-        {
-          "path": "$APPLOCALDATA/**"
-        }
-      ]
-    },
-    {
-      "identifier": "fs:allow-write-file",
-      "allow": [
-        {
-          "path": "$APPLOCALDATA/**"
-        },
-        {
-          "path": "D:\\Games/**"
-        },
-        {
-          "path": "**"
-        }
-      ]
-    },
-    {
-      "identifier": "fs:allow-exists",
-      "allow": [
-        {
-          "path": "$APPLOCALDATA/**"
-        },
-        {
-          "path": "D:\\Games/**"
-        },
-        {
-          "path": "**"
-        }
-      ]
-    },
-    "os:default"
-  ]
+	"$schema": "../gen/schemas/desktop-schema.json",
+	"identifier": "default",
+	"description": "Capability for the main window",
+	"windows": ["main"],
+	"permissions": [
+		"core:default",
+		"shell:default",
+		"dialog:default",
+		"notification:default",
+		{
+			"identifier": "shell:allow-execute",
+			"allow": [
+				{
+					"name": "binaries/chdman",
+					"sidecar": true,
+					"args": true
+				},
+				{
+					"name": "binaries/DolphinTool",
+					"sidecar": true,
+					"args": true
+				},
+				{
+					"name": "chmod",
+					"cmd": "chmod"
+				},
+				{
+					"name": "runtime-chdman",
+					"cmd": "",
+					"args": true
+				}
+			]
+		},
+		{
+			"identifier": "shell:allow-spawn",
+			"allow": [
+				{
+					"name": "binaries/chdman",
+					"sidecar": true,
+					"args": true
+				},
+				{
+					"name": "binaries/DolphinTool",
+					"sidecar": true,
+					"args": true
+				},
+				{
+					"name": "runtime-chdman",
+					"cmd": "",
+					"args": true
+				}
+			]
+		},
+		"store:default",
+		{
+			"identifier": "http:default",
+			"allow": [
+				{
+					"url": "https://github.com/**"
+				},
+				{
+					"url": "https://objects.githubusercontent.com/**"
+				},
+				{
+					"url": "https://raw.githubusercontent.com/**"
+				},
+				{
+					"url": "https://art.gametdb.com/**"
+				},
+				{
+					"url": "https://thumbnails.libretro.com/**"
+				}
+			]
+		},
+		{
+			"identifier": "fs:allow-read-file",
+			"allow": [
+				{
+					"path": "$APPLOCALDATA/**"
+				},
+				{
+					"path": "$APPDATA/**"
+				},
+				{
+					"path": "**"
+				}
+			]
+		},
+		{
+			"identifier": "fs:allow-read-dir",
+			"allow": [
+				{
+					"path": "$APPLOCALDATA/**"
+				},
+				{
+					"path": "$APPDATA/**"
+				},
+
+				{
+					"path": "**"
+				}
+			]
+		},
+		{
+			"identifier": "fs:allow-stat",
+			"allow": [
+				{
+					"path": "$APPLOCALDATA/**"
+				},
+				{
+					"path": "$APPDATA/**"
+				},
+				{
+					"path": "**"
+				}
+			]
+		},
+		{
+			"identifier": "fs:allow-read-text-file",
+			"allow": [
+				{
+					"path": "$APPLOCALDATA/**"
+				},
+				{
+					"path": "$APPDATA/**"
+				}
+			]
+		},
+		{
+			"identifier": "fs:allow-write-file",
+			"allow": [
+				{
+					"path": "$APPLOCALDATA/**"
+				},
+				{
+					"path": "$APPDATA/**"
+				},
+				{
+					"path": "**"
+				}
+			]
+		},
+		{
+			"identifier": "fs:allow-mkdir",
+			"allow": [
+				{
+					"path": "$APPLOCALDATA/**"
+				},
+				{
+					"path": "$APPDATA/**"
+				},
+				{
+					"path": "**"
+				}
+			]
+		},
+		{
+			"identifier": "fs:allow-exists",
+			"allow": [
+				{
+					"path": "$APPLOCALDATA/**"
+				},
+				{
+					"path": "$APPDATA/**"
+				},
+				{
+					"path": "**"
+				}
+			]
+		},
+		"os:default",
+		{
+			"identifier": "fs:allow-read",
+			"allow": [
+				{
+					"path": "**"
+				}
+			]
+		},
+		"core:window:allow-set-progress-bar"
+	]
 }

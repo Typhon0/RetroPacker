@@ -169,17 +169,13 @@ jobs:
           # Windows x64
           cp downloads/windows/DolphinTool.exe src-tauri/binaries/DolphinTool-x86_64-pc-windows-msvc.exe
           
-          # macOS (Currently assuming x64 host is building x64 or universal. 
-          # You might need separate arm64 build for M1/M2 native, or use universal binary.)
-          # For now, mapping to both for safety if universal, or just one if not.
-          # GitHub Actions macOS runners are ARM64 by default for macos-14+, but intel for macos-13/12.
-          # We used 'macos-latest' (usually 14/arm64 now).
-          
+          # macOS (Universal)
           cp downloads/macos/DolphinTool src-tauri/binaries/DolphinTool-x86_64-apple-darwin
           cp downloads/macos/DolphinTool src-tauri/binaries/DolphinTool-aarch64-apple-darwin
           
           chmod +x src-tauri/binaries/*
           ls -R src-tauri/binaries
+          rm -rf downloads
           
       - id: commit
         run: |
