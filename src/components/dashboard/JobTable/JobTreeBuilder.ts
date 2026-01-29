@@ -57,9 +57,9 @@ export function findCommonPrefix(jobs: Job[]): string[] {
 export function buildTree(jobs: Job[]): TreeNode {
 	const root: TreeNode = { name: "Root", path: "", jobs: [], children: {} };
 
-	// Find common prefix to skip
+	// Find common prefix to skip (keep the last segment so root folder is visible)
 	const commonPrefix = findCommonPrefix(jobs);
-	const skipDepth = commonPrefix.length;
+	const skipDepth = Math.max(commonPrefix.length - 1, 0);
 
 	for (const job of jobs) {
 		// Normalize path separators
@@ -88,12 +88,6 @@ export function buildTree(jobs: Job[]): TreeNode {
 		}
 
 		current.jobs.push(job);
-	}
-
-	// If root has only one child and no direct jobs, collapse it
-	const rootChildren = Object.keys(root.children);
-	if (rootChildren.length === 1 && root.jobs.length === 0) {
-		return root.children[rootChildren[0]];
 	}
 
 	return root;

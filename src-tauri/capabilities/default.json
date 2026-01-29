@@ -6,6 +6,7 @@
 	"permissions": [
 		"core:default",
 		"shell:default",
+		"shell:allow-kill",
 		"dialog:default",
 		"notification:default",
 		{
@@ -24,6 +25,16 @@
 				{
 					"name": "chmod",
 					"cmd": "chmod"
+				},
+				{
+					"name": "taskkill",
+					"cmd": "taskkill",
+					"args": true
+				},
+				{
+					"name": "kill",
+					"cmd": "kill",
+					"args": true
 				},
 				{
 					"name": "runtime-chdman",
@@ -48,6 +59,16 @@
 				{
 					"name": "runtime-chdman",
 					"cmd": "",
+					"args": true
+				},
+				{
+					"name": "taskkill",
+					"cmd": "taskkill",
+					"args": true
+				},
+				{
+					"name": "kill",
+					"cmd": "kill",
 					"args": true
 				}
 			]

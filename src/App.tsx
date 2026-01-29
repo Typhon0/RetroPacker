@@ -1,6 +1,5 @@
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { WorkflowTabs } from "@/components/dashboard/WorkflowTabs";
-import { TerminalDrawer } from "@/components/dashboard/TerminalDrawer";
 import { GlobalSettings } from "@/components/dashboard/GlobalSettings";
 import { useQueueProcessor } from "@/hooks/useQueueProcessor";
 import { useTaskbarProgress } from "@/hooks/useTaskbarProgress";
@@ -11,6 +10,7 @@ import { Trash2, Play, Pause } from "lucide-react";
 import { usePackerStore } from "@/stores/usePackerStore";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { RepositoryProvider } from "@/presentation/context/RepositoryContext";
+import { ProcessRegistry } from "@/services/ProcessRegistry";
 
 /**
  * Inner App Content - requires RepositoryProvider to be available.
@@ -26,9 +26,6 @@ function AppContent() {
 	useQueueProcessor("info");
 	useTaskbarProgress();
 	useSleepPrevention();
-
-	const [selectedJobId] = useState<string | undefined>();
-	const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
 	const queue = useQueueStore((state) => state.queues[activeWorkflow]);
 	const clearQueue = useQueueStore((state) => state.clearQueue);
@@ -55,9 +52,7 @@ function AppContent() {
 				);
 			}
 		}
-	}, []);
-
-	const selectedJob = queue.find((j) => j.id === selectedJobId);
+	}, [concurrency, setConcurrency]);
 
 	return (
 		<TooltipProvider>
@@ -102,7 +97,11 @@ function AppContent() {
 								<Button
 									variant="destructive"
 									size="sm"
-									onClick={() => clearQueue(activeWorkflow)}
+									onClick={() => {
+										// Fire-and-forget: don't await to avoid blocking UI
+										ProcessRegistry.cancelAll(activeWorkflow);
+										clearQueue(activeWorkflow);
+									}}
 								>
 									<Trash2 className="h-4 w-4 mr-2" />
 									Clear
@@ -116,12 +115,6 @@ function AppContent() {
 				<main className="flex-1 container mx-auto p-6 flex flex-col gap-6 overflow-hidden">
 					<WorkflowTabs />
 				</main>
-
-				<TerminalDrawer
-					job={selectedJob}
-					isOpen={isDrawerOpen && !!selectedJob}
-					onClose={() => setIsDrawerOpen(false)}
-				/>
 			</div>
 		</TooltipProvider>
 	);

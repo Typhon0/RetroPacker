@@ -1,77 +1,86 @@
 import { useEffect, useRef } from "react";
-import { useQueueStore, Job } from "../stores/useQueueStore";
+import { useQueueStore } from "../stores/useQueueStore";
 
 /**
  * Hook to prevent system sleep during active processing.
- * Checks all workflow queues for active jobs.
+ * Uses optimized selectors to minimize re-renders.
  */
 export function useSleepPrevention() {
-	const queues = useQueueStore((state) => state.queues);
-	const isProcessingMap = useQueueStore((state) => state.isProcessing);
+	// Use a selector that only returns a boolean, not the entire queue
+	const hasActiveJobs = useQueueStore((state) =>
+		Object.values(state.queues)
+			.flat()
+			.some((j) => j.status === "processing"),
+	);
+	const anyProcessing = useQueueStore((state) =>
+		Object.values(state.isProcessing).some(Boolean),
+	);
+
 	const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+	const lastActionRef = useRef<"acquire" | "release" | null>(null);
 
 	useEffect(() => {
-		// Check if any workflow has active jobs
-		const allJobs: Job[] = Object.values(queues).flat();
-		const anyProcessing = Object.values(isProcessingMap).some(Boolean);
-		const hasActiveJobs = allJobs.some((j: Job) => j.status === "processing");
+		const shouldHaveLock = anyProcessing && hasActiveJobs;
 
-		const requestWakeLock = async () => {
-			if (anyProcessing && hasActiveJobs && !wakeLockRef.current) {
-				try {
-					if ("wakeLock" in navigator) {
+		// Debounce: Only take action if the desired state changed
+		if (shouldHaveLock && lastActionRef.current !== "acquire") {
+			const requestWakeLock = async () => {
+				if (!wakeLockRef.current && "wakeLock" in navigator) {
+					try {
 						wakeLockRef.current = await navigator.wakeLock.request("screen");
+						lastActionRef.current = "acquire";
 						console.log("Wake lock acquired - preventing sleep");
 
 						wakeLockRef.current.addEventListener("release", () => {
-							console.log("Wake lock released");
 							wakeLockRef.current = null;
+							// Don't set lastActionRef here - let effect logic handle it
 						});
+					} catch (e) {
+						console.warn("Wake lock request failed:", e);
 					}
-				} catch (e) {
-					console.warn("Wake lock request failed:", e);
 				}
-			}
-		};
-
-		const releaseWakeLock = async () => {
-			if (wakeLockRef.current) {
-				try {
-					await wakeLockRef.current.release();
-					wakeLockRef.current = null;
-					console.log("Wake lock released - allowing sleep");
-				} catch (e) {
-					console.warn("Wake lock release failed:", e);
-				}
-			}
-		};
-
-		if (anyProcessing && hasActiveJobs) {
+			};
 			requestWakeLock();
-		} else {
+		} else if (!shouldHaveLock && lastActionRef.current !== "release") {
+			const releaseWakeLock = async () => {
+				if (wakeLockRef.current) {
+					try {
+						await wakeLockRef.current.release();
+						wakeLockRef.current = null;
+						lastActionRef.current = "release";
+						console.log("Wake lock released - allowing sleep");
+					} catch (e) {
+						console.warn("Wake lock release failed:", e);
+					}
+				} else {
+					lastActionRef.current = "release";
+				}
+			};
 			releaseWakeLock();
 		}
 
 		return () => {
-			releaseWakeLock();
+			// Cleanup on unmount
+			if (wakeLockRef.current) {
+				wakeLockRef.current.release().catch(() => {});
+				wakeLockRef.current = null;
+			}
 		};
-	}, [queues, isProcessingMap]);
+	}, [hasActiveJobs, anyProcessing]);
 
 	// Re-acquire wake lock when page becomes visible again
 	useEffect(() => {
 		const handleVisibilityChange = async () => {
-			const allJobs: Job[] = Object.values(queues).flat();
-			const anyProcessing = Object.values(isProcessingMap).some(Boolean);
-			const hasActiveJobs = allJobs.some((j: Job) => j.status === "processing");
-
 			if (
 				document.visibilityState === "visible" &&
+				hasActiveJobs &&
 				anyProcessing &&
-				hasActiveJobs
+				!wakeLockRef.current
 			) {
-				if (!wakeLockRef.current && "wakeLock" in navigator) {
+				if ("wakeLock" in navigator) {
 					try {
 						wakeLockRef.current = await navigator.wakeLock.request("screen");
+						lastActionRef.current = "acquire";
 						console.log("Wake lock re-acquired after visibility change");
 					} catch (e) {
 						console.warn("Failed to re-acquire wake lock:", e);
@@ -83,5 +92,5 @@ export function useSleepPrevention() {
 		document.addEventListener("visibilitychange", handleVisibilityChange);
 		return () =>
 			document.removeEventListener("visibilitychange", handleVisibilityChange);
-	}, [queues, isProcessingMap]);
+	}, [hasActiveJobs, anyProcessing]);
 }

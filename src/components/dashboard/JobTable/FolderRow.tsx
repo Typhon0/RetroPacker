@@ -27,6 +27,7 @@ interface FolderRowProps {
 	depth: number;
 	isExpanded: boolean;
 	folderOverride?: Job["platformOverride"];
+	inferredPlatform?: Job["platformOverride"];
 	onToggle: () => void;
 	onStartFolder: () => void;
 	onSetPlatform: (platform: Job["platformOverride"]) => void;
@@ -40,12 +41,14 @@ export function FolderRow({
 	depth,
 	isExpanded,
 	folderOverride,
+	inferredPlatform,
 	onToggle,
 	onStartFolder,
 	onSetPlatform,
 }: FolderRowProps): React.ReactElement {
 	const totalItems = countItems(node);
 	const pendingInFolder = countPending(node);
+	const currentValue = folderOverride || inferredPlatform || "auto";
 
 	return (
 		<TableRow
@@ -74,7 +77,7 @@ export function FolderRow({
 			<TableCell className="py-2">
 				{pendingInFolder > 0 && (
 					<Select
-						value={folderOverride || "auto"}
+						value={currentValue}
 						onValueChange={(val) => {
 							onSetPlatform(
 								val === "auto" ? undefined : (val as Job["platformOverride"]),
@@ -91,6 +94,7 @@ export function FolderRow({
 							<SelectItem value="auto">Mixed</SelectItem>
 							<SelectItem value="ps1">PS1</SelectItem>
 							<SelectItem value="ps2">PS2</SelectItem>
+							<SelectItem value="psp">PSP</SelectItem>
 							<SelectItem value="dreamcast">Dreamcast</SelectItem>
 							<SelectItem value="saturn">Saturn</SelectItem>
 							<SelectItem value="gamecube">GameCube</SelectItem>

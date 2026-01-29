@@ -33,12 +33,12 @@ export function useQueueProcessor(workflow: WorkflowType) {
 			).length;
 			const nextJob = queue.find((j: Job) => j.status === "pending");
 
-			// Debug Heartbeat
-			if (isProcessing && (processingCount < concurrency || nextJob)) {
-				console.log(
-					`[QueueProcessor:${workflow}] Heartbeat - Processing: ${isProcessing}, Active: ${processingCount}, Pending: ${queue.length}, Next: ${nextJob?.filename}`,
-				);
-			}
+			// Debug Heartbeat - commented out to reduce overhead
+			// if (isProcessing && (processingCount < concurrency || nextJob)) {
+			// 	console.log(
+			// 		`[QueueProcessor:${workflow}] Heartbeat - Processing: ${isProcessing}, Active: ${processingCount}, Pending: ${queue.length}, Next: ${nextJob?.filename}`,
+			// 	);
+			// }
 
 			if (isProcessing && processingCount < concurrency) {
 				if (nextJob) {

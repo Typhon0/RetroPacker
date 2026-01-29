@@ -1,17 +1,39 @@
-import { useEffect } from "react";
-import { useQueueStore, Job } from "../stores/useQueueStore";
+import { useEffect, useRef } from "react";
+import { useQueueStore } from "../stores/useQueueStore";
+import type { Job } from "../stores/useQueueStore";
 import { getCurrentWindow, ProgressBarStatus } from "@tauri-apps/api/window";
 
 /**
  * Hook to update Windows/macOS taskbar progress based on queue status.
  * Aggregates progress from all workflow queues.
+ * Throttled to prevent excessive updates.
  */
 export function useTaskbarProgress() {
 	const queues = useQueueStore((state) => state.queues);
 	const isProcessingMap = useQueueStore((state) => state.isProcessing);
+	const lastUpdateRef = useRef(0);
+	const pendingUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	useEffect(() => {
 		const updateProgress = async () => {
+			const now = Date.now();
+
+			// Throttle: max 4 updates per second (250ms)
+			if (now - lastUpdateRef.current < 250) {
+				// Schedule a delayed update if not already scheduled
+				if (!pendingUpdateRef.current) {
+					pendingUpdateRef.current = setTimeout(
+						() => {
+							pendingUpdateRef.current = null;
+							updateProgress();
+						},
+						250 - (now - lastUpdateRef.current),
+					);
+				}
+				return;
+			}
+
+			lastUpdateRef.current = now;
 			const window = getCurrentWindow();
 
 			// Flatten all queues
@@ -50,13 +72,19 @@ export function useTaskbarProgress() {
 			const overallProgress =
 				(completedJobs * 100 + processingProgress) / (totalJobs * 100);
 
-			// Update taskbar
+			// Update taskbar with integer progress (0-100)
 			await window.setProgressBar({
 				status: ProgressBarStatus.Normal,
-				progress: Math.min(1, Math.max(0, overallProgress)),
+				progress: Math.round(Math.min(1, Math.max(0, overallProgress)) * 100),
 			});
 		};
 
 		updateProgress().catch(console.error);
+
+		return () => {
+			if (pendingUpdateRef.current) {
+				clearTimeout(pendingUpdateRef.current);
+			}
+		};
 	}, [queues, isProcessingMap]);
 }

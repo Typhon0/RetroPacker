@@ -126,6 +126,7 @@ const formatFileSize = (bytes: number): string => {
 export function InfoViewer() {
 	const [gameInfo, setGameInfo] = useState<GameInfo | null>(null);
 	const [isLoading, setIsLoading] = useState(false);
+	const [isCoverLoading, setIsCoverLoading] = useState(false);
 	const [error, setError] = useState<string | undefined>(undefined);
 	const [isDragging, setIsDragging] = useState(false);
 	const [showRaw, setShowRaw] = useState(false);
@@ -136,6 +137,7 @@ export function InfoViewer() {
 		fileSize?: number,
 	) => {
 		setIsLoading(true);
+		setIsCoverLoading(false); // Reset cover loading state
 		setError(undefined);
 		setShowRaw(false); // Reset raw view toggle
 
@@ -161,7 +163,6 @@ export function InfoViewer() {
 
 			// Initialize info object
 			let gameId: string | null = null;
-			let coverPath: string | undefined;
 			let rawOutput: string | undefined;
 			let chdStats: ChdStats | undefined;
 			let dolphinStats: DolphinStats | undefined;
@@ -173,7 +174,6 @@ export function InfoViewer() {
 				console.error("Failed to extract game ID:", e);
 			}
 
-			// detailed info via tools (chdman or dolphin)
 			if (extension === "chd") {
 				try {
 					const { BinaryManagerService } = await import(
@@ -193,6 +193,51 @@ export function InfoViewer() {
 					}
 				} catch (e) {
 					console.error("Failed to get CHD info:", e);
+				}
+			} else if (extension === "cso") {
+				// CSO Header Reader
+				try {
+					const { open } = await import("@tauri-apps/plugin-fs");
+					const file = await open(filePath, { read: true });
+					const buffer = new Uint8Array(24); // CSO header is 24 bytes
+					await file.read(buffer);
+					await file.close();
+
+					// Parse CSO Header
+					// u32 magic (CISO)
+					// u32 header_size
+					// u64 total_bytes
+					// u32 block_size
+					// u8 version
+					// u8 align
+					// u16 reserved
+					const view = new DataView(buffer.buffer);
+					if (view.getUint32(0, true) === 0x4f534943) { // CISO little endian? File usually little endian.
+                         // Magic is "CISO" = 0x43 0x49 0x53 0x4F. 
+                         // Little Endian read: 0x4F534943
+						const headerSize = view.getUint32(4, true);
+						const totalBytes = view.getBigUint64(8, true);
+						const blockSize = view.getUint32(16, true);
+						const ver = view.getUint8(20);
+						
+						rawOutput = `CSO Header:\n`;
+						rawOutput += `Magic: CISO\n`;
+						rawOutput += `Header Size: ${headerSize} bytes\n`;
+						rawOutput += `Uncompressed Size: ${totalBytes} bytes\n`;
+						rawOutput += `Block Size: ${blockSize} bytes\n`;
+						rawOutput += `Version: ${ver}\n`;
+						
+						// Estimate compression ratio
+						const ratio = (size / Number(totalBytes)) * 100;
+						chdStats = {
+							logicalSize: `${totalBytes} bytes`,
+							chdSize: `${size} bytes`,
+							ratio: `${ratio.toFixed(1)}%`,
+							compression: "Deflate (CSO)",
+						};
+					}
+				} catch (e) {
+					console.error("Failed to read CSO header", e);
 				}
 			} else if (
 				["rvz", "wbfs", "gcz", "gcm"].includes(extension || "") ||
@@ -231,17 +276,7 @@ export function InfoViewer() {
 				}
 			}
 
-			// Fetch Cover using the "Unfailable" pipeline
-			console.log(`Fetching cover for ${name} (${system})`);
-			const coverUrl = await MetadataService.fetchCover(
-				gameId,
-				system,
-				filePath,
-			);
-			if (coverUrl) {
-				coverPath = coverUrl;
-			}
-
+			// Render Initial Metadata (Without Cover) - Immediate Feedback
 			setGameInfo({
 				filename: name,
 				path: filePath,
@@ -249,14 +284,42 @@ export function InfoViewer() {
 				size,
 				system,
 				gameId,
-				coverPath,
+				coverPath: undefined,
 				rawOutput,
 				chdStats,
 				dolphinStats,
 			});
+			setIsLoading(false); // Stop loading spinner so user sees data
+
+			// Fetch Cover using the "Unfailable" pipeline (Background)
+			console.log(`Fetching cover for ${name} (${system})`);
+			setIsCoverLoading(true); // Start cover spinner
+			try {
+				const coverUrl = await MetadataService.fetchCover(
+					gameId,
+					system,
+					filePath,
+				);
+				if (coverUrl) {
+					setGameInfo((prev) => {
+						// Guard against stale updates if user switched files
+						if (!prev || prev.path !== filePath) return prev;
+						return { ...prev, coverPath: coverUrl };
+					});
+				}
+			} catch (e) {
+				console.warn("Cover fetch failed silently:", e);
+			} finally {
+				setIsCoverLoading(false); // Stop cover spinner
+			}
 		} catch (e) {
 			setError(e instanceof Error ? e.message : "Failed to read file info");
+			setIsLoading(false);
+			setIsCoverLoading(false);
 		} finally {
+			// Ensure loading is off if we crashed early, 
+			// but don't toggle it if we already turned it off manually.
+            // Actually, safe to just ensure it's false here.
 			setIsLoading(false);
 		}
 	}, []);
@@ -319,6 +382,7 @@ export function InfoViewer() {
 							"gcm",
 							"wbfs",
 							"gdi",
+							"cso",
 						],
 					},
 				],
@@ -365,7 +429,9 @@ export function InfoViewer() {
 							? "Drop file here..."
 							: "Drop a game file or click to browse"}
 					</p>
-					<p className="text-xs">Supports ISO, CHD, RVZ, GCZ, BIN/CUE, GDI</p>
+					<p className="text-xs">
+						Supports ISO, CHD, CSO, RVZ, GCZ, BIN/CUE, GDI
+					</p>
 				</div>
 			</div>
 
@@ -424,12 +490,21 @@ export function InfoViewer() {
 										</div>
 									) : (
 										<div className="w-48 h-64 rounded-lg border-2 border-dashed border-muted-foreground/25 flex flex-col items-center justify-center bg-muted/5 text-muted-foreground">
-											<ImageIcon className="h-12 w-12 mb-2 opacity-50" />
-											<p className="text-xs font-medium">No Cover Art</p>
-											{!gameInfo.gameId && (
-												<p className="text-[10px] text-center px-2 mt-1 opacity-70">
-													ID not found
-												</p>
+											{isCoverLoading ? (
+												<>
+													<Loader2 className="h-8 w-8 animate-spin text-primary opacity-50 mb-2" />
+													<p className="text-[10px] font-medium opacity-70">Fetching Cover...</p>
+												</>
+											) : (
+												<>
+													<ImageIcon className="h-12 w-12 mb-2 opacity-50" />
+													<p className="text-xs font-medium">No Cover Art</p>
+													{!gameInfo.gameId && (
+														<p className="text-[10px] text-center px-2 mt-1 opacity-70">
+															ID not found
+														</p>
+													)}
+												</>
 											)}
 										</div>
 									)}

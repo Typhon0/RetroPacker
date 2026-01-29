@@ -3,32 +3,70 @@ import { BinaryManagerService } from "./BinaryManagerService";
 import { appDataDir, join, dirname } from "@tauri-apps/api/path";
 import { fetch } from "@tauri-apps/plugin-http";
 
-export class MetadataService {
-	private static cacheDir: string | null = null;
-	private static readonly TIMEOUT_MS = 3500; // Fast fail to keep UI snappy
+class AsyncLimiter {
+	private active = 0;
+	private queue: Array<() => void> = [];
 
-	static async initCache(): Promise<string> {
-		if (this.cacheDir) return this.cacheDir;
-		const appData = await appDataDir();
-		this.cacheDir = await join(appData, "cache", "covers");
-		if (!(await exists(this.cacheDir))) {
-			await mkdir(this.cacheDir, { recursive: true });
+	constructor(private readonly limit: number) {}
+
+	private async acquire(): Promise<void> {
+		if (this.active < this.limit) {
+			this.active += 1;
+			return;
 		}
-		return this.cacheDir;
+		await new Promise<void>((resolve) => this.queue.push(resolve));
+		this.active += 1;
 	}
 
-	/**
-	 * 🕵️ SYSTEM DETECTION
-	 * Centralized async detection with header fallback
-	 * Note: Domain logic is primarily in DetectSystemUseCase.
-	 * This method is kept for service-level utilities if needed, 
-	 * but largely mirrors the UseCase logic for consistency.
-	 */
+	private release(): void {
+		this.active = Math.max(0, this.active - 1);
+		const next = this.queue.shift();
+		if (next) next();
+	}
+
+	async run<T>(fn: () => Promise<T>): Promise<T> {
+		await this.acquire();
+		try {
+			return await fn();
+		} finally {
+			this.release();
+		}
+	}
+}
+
+type ReadableHandle = {
+	read: (buffer: Uint8Array) => Promise<number | null>;
+	close: () => Promise<void>;
+};
+
+// biome-ignore lint/complexity/noStaticOnlyClass: static utility class is intentional
+export class MetadataService {
+	private static cacheDir: string | null = null;
+	private static readonly TIMEOUT_MS = 3500;
+	private static readonly COVER_CONCURRENCY = 4;
+	private static readonly coverLimiter = new AsyncLimiter(
+		MetadataService.COVER_CONCURRENCY,
+	);
+	private static readonly coverCache = new Map<string, string | null>();
+	private static readonly coverInFlight = new Map<
+		string,
+		Promise<string | null>
+	>();
+
+	static async initCache(): Promise<string> {
+		if (MetadataService.cacheDir) return MetadataService.cacheDir;
+		const appData = await appDataDir();
+		MetadataService.cacheDir = await join(appData, "cache", "covers");
+		if (!(await exists(MetadataService.cacheDir))) {
+			await mkdir(MetadataService.cacheDir, { recursive: true });
+		}
+		return MetadataService.cacheDir;
+	}
+
 	static async detectSystemAsync(filePath: string): Promise<string> {
 		const ext = filePath.split(".").pop()?.toLowerCase() || "";
 		const lowerPath = filePath.toLowerCase().replace(/\\/g, "/");
 
-		// 1. Extension (Fast)
 		switch (ext) {
 			case "gdi":
 				return "Dreamcast";
@@ -41,48 +79,65 @@ export class MetadataService {
 			case "cue":
 			case "bin":
 				return "PS1";
+			case "cso":
+				return "PSP";
 			case "nsp":
 			case "nsz":
 			case "xci":
 				return "Switch";
 		}
 
-		// 2. ISO Header Check (Deep)
-		if (ext === "iso" || ext === "chd") {
-			let file;
+		if (ext === "iso" || ext === "chd" || ext === "cso") {
+			let file: ReadableHandle | null = null;
 			try {
 				const { open } = await import("@tauri-apps/plugin-fs");
-				file = await open(filePath, { read: true });
-				// Read enough for PSP header (0x8000)
+				file = (await open(filePath, { read: true })) as ReadableHandle;
 				const buffer = new Uint8Array(32768 + 64);
 				await file.read(buffer);
 
-				// PSP Magic: "PSP GAME" at offset 0x8000 (32768)
-				if (buffer[0x8000] === 0x50 && buffer[0x8001] === 0x53 && buffer[0x8002] === 0x50) {
+				if (
+					buffer[0x8000] === 0x50 &&
+					buffer[0x8001] === 0x53 &&
+					buffer[0x8002] === 0x50
+				) {
 					return "PSP";
 				}
 
-				// Wii Magic (0x5D1C9EA3)
-				if (buffer[24] === 0x5d && buffer[25] === 0x1c && buffer[26] === 0x9e)
+				if (
+					buffer[0] === 0x43 &&
+					buffer[1] === 0x49 &&
+					buffer[2] === 0x53 &&
+					buffer[3] === 0x4f
+				) {
+					return "PSP";
+				}
+
+				if (
+					buffer[24] === 0x5d &&
+					buffer[25] === 0x1c &&
+					buffer[26] === 0x9e
+				)
 					return "Wii";
-				// GameCube Magic (0xC2339F3D)
-				if (buffer[28] === 0xc2 && buffer[29] === 0x33 && buffer[30] === 0x9f)
+
+				if (
+					buffer[28] === 0xc2 &&
+					buffer[29] === 0x33 &&
+					buffer[30] === 0x9f
+				)
 					return "GameCube";
 
-				// Standard ID Check
 				const gameId = new TextDecoder("ascii").decode(buffer.slice(0, 6));
 				if (/^[A-Z0-9]{6}$/.test(gameId)) {
 					if (!gameId.startsWith("SL") && !gameId.startsWith("SC"))
 						return "GameCube";
 				}
-			} catch (e) {
+			} catch {
 				// Ignore read errors
 			} finally {
 				if (file) await file.close();
 			}
 		}
 
-		// 3. Path Fallback
 		if (lowerPath.includes("gamecube")) return "GameCube";
 		if (lowerPath.includes("wii")) return "Wii";
 		if (lowerPath.includes("psp")) return "PSP";
@@ -92,41 +147,44 @@ export class MetadataService {
 		return ext === "iso" ? "PS2" : "Unknown";
 	}
 
-	/**
-	 * 🛠️ TOOL-BASED EXTRACTION (The "Rock Solid" Layer)
-	 * -------------------------------------------------------------------------
-	 * Uses chdman or dolphintool to extract metadata reliably.
-	 * Use this for compressed formats (CHD, RVZ, GCZ) where raw read fails.
-	 */
 	static async extractIdViaTools(
 		filePath: string,
 		system: string,
 	): Promise<string | null> {
 		const ext = filePath.split(".").pop()?.toLowerCase();
 
-		// 1. Handle CHDs (Any System)
 		if (ext === "chd") {
-			return this.parseChdInfo(filePath);
+			return MetadataService.parseChdInfo(filePath);
 		}
 
-		// 2. Handle GameCube/Wii (RVZ, GCZ, ISO) via DolphinTool
 		if (system === "GameCube" || system === "Wii") {
-			// Only try if extension is complex or if we want absolute certainty
 			if (["rvz", "gcz", "wbfs", "iso", "ciso"].includes(ext || "")) {
-				return this.parseDolphinHeader(filePath);
+				return MetadataService.parseDolphinHeader(filePath);
 			}
 		}
 
 		return null;
 	}
 
-	/**
-	 * Runs `chdman info -i file.chd` and parses the output
-	 */
-	private static async parseChdInfo(_filePath: string): Promise<string | null> {
+	private static async parseChdInfo(
+		filePath: string,
+	): Promise<string | null> {
 		try {
-			// CHD info typically requires extracting data to find the ID reliably.
-			// Current best practice for CHD is filename fuzzy matching unless we extract sectors.
+			const stdout = await BinaryManagerService.execute("chdman", [
+				"info",
+				"-i",
+				filePath,
+			]);
+
+			const match = stdout.match(/[A-Z]{4}[-_]?\d{5}/);
+			if (match) {
+				const id = match[0].replace("_", "-");
+				if (!id.includes("-")) {
+					return `${id.substring(0, 4)}-${id.substring(4)}`;
+				}
+				return id;
+			}
+
 			return null;
 		} catch (e: unknown) {
 			console.warn("chdman info failed:", e);
@@ -134,23 +192,15 @@ export class MetadataService {
 		}
 	}
 
-	/**
-	 * Runs `dolphintool header -i file.iso` (or similar)
-	 */
 	private static async parseDolphinHeader(
 		filePath: string,
 	): Promise<string | null> {
 		try {
-			// dolphintool header -i <path>
 			const stdout = await BinaryManagerService.execute("dolphintool", [
 				"header",
 				"-i",
 				filePath,
 			]);
-
-			// Output format:
-			// Game ID: GALE01
-			// Internal Name: Super Smash Bros. Melee
 
 			const match = stdout.match(/Game ID:\s*([A-Z0-9]{6})/i);
 			if (match) return match[1];
@@ -162,49 +212,40 @@ export class MetadataService {
 		}
 	}
 
-	/**
-	 * 🧬 HYBRID EXTRACTION STRATEGY
-	 * -------------------------------------------------------------------------
-	 */
 	static async extractGameId(
 		filePath: string,
 		system: string,
 	): Promise<string | null> {
-		// 1. Try Tool-based (Highest Accuracy for Compressed/Complex formats)
-		const toolId = await this.extractIdViaTools(filePath, system);
+		const toolId = await MetadataService.extractIdViaTools(filePath, system);
 		if (toolId) {
 			console.log(`[Metadata] Tool extraction success: ${toolId}`);
 			return toolId;
 		}
 
-		// 2. Fallback to Raw Byte Reading
 		if (system === "GameCube" || system === "Wii") {
-			return this.extractNintendoGameId(filePath);
+			return MetadataService.extractNintendoGameId(filePath);
 		}
 		if (system === "PSP") {
-			return this.extractPSPGameId(filePath);
+			return MetadataService.extractPSPGameId(filePath);
 		}
-		return this.extractPSGameId(filePath);
+		return MetadataService.extractPSGameId(filePath);
 	}
 
 	private static async extractPSGameId(
 		filePath: string,
 	): Promise<string | null> {
-		let file: any;
+		let file: ReadableHandle | null = null;
 		try {
 			const { open } = await import("@tauri-apps/plugin-fs");
-			file = await open(filePath, { read: true });
+			file = (await open(filePath, { read: true })) as ReadableHandle;
 
-			// Scan Strategy:
-			// 1. Boot sector (0-2048)
-			// 2. Extended header area (up to 64KB) for weird PS2 rips
 			const buffer = new Uint8Array(65536);
 			await file.read(buffer);
 			const text = new TextDecoder("ascii").decode(buffer);
 
-			// Look for SLUS-12345 or SLES_123.45 format
 			const match =
 				text.match(/[A-Z]{4}[-_]\d{3}\.?\d{2}/) ||
+				text.match(/[A-Z]{4}\s+\d{5}/) ||
 				text.match(/[A-Z]{4}[-_]?\d{5}/);
 
 			if (match) {
@@ -221,19 +262,16 @@ export class MetadataService {
 	private static async extractPSPGameId(
 		filePath: string,
 	): Promise<string | null> {
-		// PSP ID is usually at offset 0x8000+ or in UMD_DATA.BIN
-		// But scanning the first 64KB typically catches the disc code like ULES-00123
-		// Re-using PS2 logic as the pattern is identical (ULES-12345)
-		return this.extractPSGameId(filePath);
+		return MetadataService.extractPSGameId(filePath);
 	}
 
 	private static async extractNintendoGameId(
 		filePath: string,
 	): Promise<string | null> {
-		let file: any;
+		let file: ReadableHandle | null = null;
 		try {
 			const { open } = await import("@tauri-apps/plugin-fs");
-			file = await open(filePath, { read: true });
+			file = (await open(filePath, { read: true })) as ReadableHandle;
 			const buffer = new Uint8Array(6);
 			await file.read(buffer);
 			const id = new TextDecoder("ascii").decode(buffer);
@@ -245,58 +283,81 @@ export class MetadataService {
 		}
 	}
 
-	/**
-	 * 🎨 COVER ART FETCHING
-	 * The "Unfailable" Pipeline
-	 */
 	static async fetchCover(
 		gameId: string | null,
 		system: string,
 		filePath: string,
 	): Promise<string | null> {
 		const filename = filePath.split(/[\\/]/).pop() || "";
+		const cacheKey = MetadataService.getCoverCacheKey(filePath, gameId, system);
 
-		// 1. 🏠 LOCAL CHECK (Instant & 100% Reliable)
-		// Checks for 'cover.jpg', 'folder.png', or '{game_filename}.jpg'
-		const localCover = await this.findLocalCover(filePath);
-		if (localCover) {
-			console.log(`[Metadata] Found local cover: ${localCover}`);
-			const { convertFileSrc } = await import("@tauri-apps/api/core");
-			return convertFileSrc(localCover);
+		if (MetadataService.coverCache.has(cacheKey)) {
+			return MetadataService.coverCache.get(cacheKey) ?? null;
 		}
 
-		// 2. 🌍 GAMETDB ID LOOKUP (High Precision)
-		if (gameId) {
-			const cover = await this.tryFetchGameTDB(gameId, system);
-			if (cover) return cover;
+		const inFlight = MetadataService.coverInFlight.get(cacheKey);
+		if (inFlight) return inFlight;
+
+		const task = MetadataService.coverLimiter.run(async () => {
+			const localCover = await MetadataService.findLocalCover(filePath);
+			if (localCover) {
+				console.log(`[Metadata] Found local cover: ${localCover}`);
+				const { convertFileSrc } = await import("@tauri-apps/api/core");
+				const localUrl = convertFileSrc(localCover);
+				MetadataService.coverCache.set(cacheKey, localUrl);
+				return localUrl;
+			}
+
+			if (gameId) {
+				const cover = await MetadataService.tryFetchGameTDB(gameId, system);
+				if (cover) {
+					MetadataService.coverCache.set(cacheKey, cover);
+					return cover;
+				}
+			}
+
+			const libRetroCover = await MetadataService.tryFetchLibRetro(
+				filename,
+				system,
+			);
+			if (libRetroCover) {
+				MetadataService.coverCache.set(cacheKey, libRetroCover);
+				return libRetroCover;
+			}
+
+			if (
+				gameId &&
+				(system === "Wii" ||
+					system === "GameCube" ||
+					system === "PS2" ||
+					system === "PSP")
+			) {
+				const scraped = await MetadataService.scrapeGameTDB(gameId, system);
+				if (scraped) {
+					MetadataService.coverCache.set(cacheKey, scraped);
+					return scraped;
+				}
+			}
+
+			console.warn(`[Metadata] All strategies failed for ${filename}`);
+			MetadataService.coverCache.set(cacheKey, null);
+			return null;
+		});
+
+		MetadataService.coverInFlight.set(cacheKey, task);
+		try {
+			return await task;
+		} finally {
+			MetadataService.coverInFlight.delete(cacheKey);
 		}
-
-		// 3. 📚 LIBRETRO FUZZY MATCH (Filename Fallback)
-		// Tries "Exact Name" -> "Clean Name" -> "Sanitized Name"
-		const libRetroCover = await this.tryFetchLibRetro(filename, system);
-		if (libRetroCover) return libRetroCover;
-
-		// 4. 🕸️ SCRAPING FALLBACK (Last Resort)
-		if (
-			gameId &&
-			(system === "Wii" || system === "GameCube" || system === "PS2" || system === "PSP")
-		) {
-			const scraped = await this.scrapeGameTDB(gameId, system);
-			if (scraped) return scraped;
-		}
-
-		console.warn(`[Metadata] All strategies failed for ${filename}`);
-		return null;
 	}
-
-	// --- STRATEGIES ---
 
 	private static async findLocalCover(
 		gamePath: string,
 	): Promise<string | null> {
 		try {
 			const dir = await dirname(gamePath);
-			const name = gamePath.split(/[\\/]/).pop()?.split(".").shift(); // "God of War"
+			const name = gamePath.split(/[\\/]/).pop()?.split(".").shift();
 
 			const files = await readDir(dir);
 			const candidates = ["cover", "folder", "front", "box", name];
@@ -306,7 +367,6 @@ export class MetadataService {
 				if (!file.name) continue;
 				const lowerName = file.name.toLowerCase();
 
-				// Check against candidates
 				for (const cand of candidates) {
 					if (!cand) continue;
 					for (const ext of extensions) {
@@ -316,8 +376,8 @@ export class MetadataService {
 					}
 				}
 			}
-		} catch (e: unknown) {
-			// Ignore (likely permission or path issue)
+		} catch {
+			// Ignore errors
 		}
 		return null;
 	}
@@ -326,11 +386,10 @@ export class MetadataService {
 		gameId: string,
 		system: string,
 	): Promise<string | null> {
-		const regions = this.getGameTdbRegions(gameId);
-		const systemCode = this.mapSystemToGameTDB(system);
+		const regions = MetadataService.getGameTdbRegions(gameId);
+		const systemCode = MetadataService.mapSystemToGameTDB(system);
 
 		for (const region of regions) {
-			// Prefer 3D cover, fallback to flat
 			const urls = [
 				`https://art.gametdb.com/${systemCode}/cover3D/${region}/${gameId}.png`,
 				`https://art.gametdb.com/${systemCode}/cover3D/${region}/${gameId}.jpg`,
@@ -339,7 +398,7 @@ export class MetadataService {
 			];
 
 			for (const url of urls) {
-				if (await this.checkUrl(url)) return url;
+				if (await MetadataService.checkUrl(url)) return url;
 			}
 		}
 		return null;
@@ -349,38 +408,30 @@ export class MetadataService {
 		filename: string,
 		system: string,
 	): Promise<string | null> {
-		const repo = this.mapSystemToLibRetro(system);
+		const repo = MetadataService.mapSystemToLibRetro(system);
 		if (!repo) return null;
 
 		const base = `https://raw.githubusercontent.com/libretro-thumbnails/${repo}/master/Named_Boxarts`;
 
-		// Generate Candidates
-		// Recursively remove extensions to handle "game.cue.chd" -> "game"
 		const cleanName = filename.replace(
 			/(?:\.(iso|bin|cue|chd|rvz|gcz|wbfs|gcm|gdi|toc|nkit))+$/i,
 			"",
 		);
 
-		// 1. Exact match (sanitized for URL)
-		const exact = cleanName.replace(/[&*/:`<>?|"]/g, "_");
-
-		// 2. No Region (e.g. "Game (USA)" -> "Game")
+		const exact = cleanName.replace(/[&*/:`<>?|\"]/g, "_");
 		const noRegion = exact.replace(/\s*\(.*?\)\s*/g, "").trim();
-
-		// 3. LibRetro Safe (replace spaces with underscores)
 		const safe = noRegion.replace(/\s+/g, "_");
 
 		const candidates = new Set([
 			`${encodeURIComponent(exact)}.png`,
 			`${encodeURIComponent(noRegion)}.png`,
 			`${encodeURIComponent(safe)}.png`,
-			// Try common suffix removal
 			`${encodeURIComponent(exact.replace(/_v[\d\.]+$/, ""))}.png`,
 		]);
 
 		for (const cand of candidates) {
 			const url = `${base}/${cand}`;
-			if (await this.checkUrl(url)) {
+			if (await MetadataService.checkUrl(url)) {
 				console.log(`[Metadata] Found LibRetro match: ${cand}`);
 				return url;
 			}
@@ -393,8 +444,7 @@ export class MetadataService {
 		system: string,
 	): Promise<string | null> {
 		try {
-			// This is a "Hail Mary" pass
-			const platform = system === "GameCube" ? "Wii" : system; // GC is hosted on Wii sub-site usually
+			const platform = system === "GameCube" ? "Wii" : system;
 			const url = `https://www.gametdb.com/${platform}/${gameId}`;
 
 			const response = await fetch(url, {
@@ -405,26 +455,25 @@ export class MetadataService {
 			if (!response.ok) return null;
 			const text = await response.text();
 
-			// Look for the "thumb" or main image class
 			const match = text.match(
 				/src="(\/gfx\/cover\/[a-zA-Z0-9]+\/[A-Za-z0-9]+\.jpg)"/,
 			);
 			if (match) {
 				return `https://www.gametdb.com${match[1]}`;
 			}
-		} catch (e: unknown) {
+		} catch {
 			/* ignore */
 		}
 		return null;
 	}
 
-	// --- HELPERS ---
-
 	private static async checkUrl(url: string): Promise<boolean> {
 		try {
-			// Race fetching against a timeout
 			const controller = new AbortController();
-			const id = setTimeout(() => controller.abort(), this.TIMEOUT_MS);
+			const id = setTimeout(
+				() => controller.abort(),
+				MetadataService.TIMEOUT_MS,
+			);
 
 			const response = await fetch(url, {
 				method: "HEAD",
@@ -440,16 +489,15 @@ export class MetadataService {
 
 	private static getGameTdbRegions(gameId: string): string[] {
 		const char = gameId[3]?.toUpperCase();
-		// Priority list based on ID char
 		switch (char) {
 			case "E":
 				return ["US", "EN"];
 			case "J":
 				return ["JA"];
 			case "P":
-				return ["EN", "FR", "DE", "ES", "IT", "AU"]; // PAL
+				return ["EN", "FR", "DE", "ES", "IT", "AU"];
 			default:
-				return ["US", "EN", "JA"]; // Try everything
+				return ["US", "EN", "JA"];
 		}
 	}
 
@@ -477,5 +525,13 @@ export class MetadataService {
 			Saturn: "Sega_-_Saturn",
 		};
 		return map[system] || "";
+	}
+
+	private static getCoverCacheKey(
+		filePath: string,
+		gameId: string | null,
+		system: string,
+	): string {
+		return `${system}::${gameId ?? ""}::${filePath}`;
 	}
 }

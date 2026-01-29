@@ -2,11 +2,12 @@
  * JobRow - Renders a single job row in the job table
  *
  * Single Responsibility: Only handles job row rendering and interactions.
+ * Uses ID-based callbacks to maintain stable references for React.memo.
  *
  * @module components/dashboard/JobTable/JobRow
  */
 
-import type React from "react";
+import React from "react";
 import { TableRow, TableCell } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 
@@ -35,10 +36,11 @@ interface JobRowProps {
 	depth: number;
 	isSelected: boolean;
 	folderOverride?: Job["platformOverride"];
-	onSelect: () => void;
-	onStart: () => void;
-	onRemove: () => void;
-	onUpdatePlatform: (platform: Job["platformOverride"]) => void;
+	// ID-based callbacks for stable memoization
+	onSelect: (jobId: string) => void;
+	onStart: (jobId: string) => void;
+	onRemove: (jobId: string) => void;
+	onUpdatePlatform: (jobId: string, platform: Job["platformOverride"]) => void;
 }
 
 /**
@@ -74,8 +76,9 @@ function formatSize(bytes: number): string {
 
 /**
  * Renders a single job row with status, progress, and actions.
+ * Uses ID-based callbacks to ensure stable prop references.
  */
-export function JobRow({
+const JobRowComponent = ({
 	job,
 	depth,
 	isSelected,
@@ -84,7 +87,7 @@ export function JobRow({
 	onStart,
 	onRemove,
 	onUpdatePlatform,
-}: JobRowProps): React.ReactElement {
+}: JobRowProps): React.ReactElement => {
 	const isDisabled = !!folderOverride;
 	const displayValue = job.platformOverride || job.system.toLowerCase();
 
@@ -94,17 +97,12 @@ export function JobRow({
 				"cursor-pointer hover:bg-muted/10 group",
 				isSelected && "bg-muted/50",
 			)}
-			onClick={onSelect}
+			onClick={() => onSelect(job.id)}
 		>
 			<TableCell style={{ paddingLeft: `${depth * 16 + 8}px` }}>
 				<div className="flex items-center gap-2">
 					{getStatusIcon(job.status)}
-					<CoverThumbnail
-						filename={job.filename}
-						filePath={job.path}
-						system={job.system}
-						size="sm"
-					/>
+					<CoverThumbnail system={job.system} size="sm" />
 				</div>
 			</TableCell>
 			<TableCell className="font-medium truncate max-w-[200px]">
@@ -115,7 +113,7 @@ export function JobRow({
 					<Select
 						value={displayValue}
 						onValueChange={(val) => {
-							onUpdatePlatform(val as Job["platformOverride"]);
+							onUpdatePlatform(job.id, val as Job["platformOverride"]);
 						}}
 						disabled={isDisabled}
 					>
@@ -132,6 +130,7 @@ export function JobRow({
 							{![
 								"ps1",
 								"ps2",
+								"psp",
 								"dreamcast",
 								"saturn",
 								"gamecube",
@@ -143,6 +142,7 @@ export function JobRow({
 							)}
 							<SelectItem value="ps1">PS1</SelectItem>
 							<SelectItem value="ps2">PS2</SelectItem>
+							<SelectItem value="psp">PSP</SelectItem>
 							<SelectItem value="dreamcast">Dreamcast</SelectItem>
 							<SelectItem value="saturn">Saturn</SelectItem>
 							<SelectItem value="gamecube">GameCube</SelectItem>
@@ -183,7 +183,7 @@ export function JobRow({
 							title="Start job"
 							onClick={(e) => {
 								e.stopPropagation();
-								onStart();
+								onStart(job.id);
 							}}
 						>
 							<Play className="h-4 w-4" />
@@ -193,10 +193,10 @@ export function JobRow({
 						variant="ghost"
 						size="icon"
 						className="h-8 w-8 text-muted-foreground hover:text-destructive transition-colors"
-						title="Remove job"
+						title={job.status === "processing" ? "Cancel job" : "Remove job"}
 						onClick={(e) => {
 							e.stopPropagation();
-							onRemove();
+							onRemove(job.id);
 						}}
 					>
 						<XCircle className="h-4 w-4" />
@@ -205,4 +205,6 @@ export function JobRow({
 			</TableCell>
 		</TableRow>
 	);
-}
+};
+
+export const JobRow = React.memo(JobRowComponent);

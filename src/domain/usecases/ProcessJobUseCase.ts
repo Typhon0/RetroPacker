@@ -23,6 +23,7 @@ import {
 import { IJobRepository } from "../repositories/IJobRepository";
 import { INotificationService } from "../repositories/INotificationService";
 import { IFileSystemRepository } from "../repositories/IFileSystemRepository";
+import { ProcessRegistry } from "@/services/ProcessRegistry";
 
 /**
  * Dependencies for ProcessJobUseCase.
@@ -51,6 +52,9 @@ export interface ProcessJobSettings {
  * (chdman or DolphinTool) based on the detected system.
  */
 export class ProcessJobUseCase {
+	// Static lock to prevent double-spawning the same job
+	private static readonly spawnLock = new Set<string>();
+
 	constructor(private readonly deps: ProcessJobDependencies) {}
 
 	/**
@@ -67,6 +71,15 @@ export class ProcessJobUseCase {
 		workflow: WorkflowType,
 		settings: ProcessJobSettings,
 	): Promise<void> {
+		const lockKey = `${workflow}:${job.id}`;
+		
+		// Prevent double-spawning: check if this job is already being started
+		if (ProcessJobUseCase.spawnLock.has(lockKey)) {
+			console.warn(`[ProcessJobUseCase] Job ${lockKey} already starting, skipping duplicate`);
+			return;
+		}
+		ProcessJobUseCase.spawnLock.add(lockKey);
+
 		const { commandExecutor, jobRepository, notificationService } = this.deps;
 
 		// Mark job as processing
@@ -122,9 +135,15 @@ export class ProcessJobUseCase {
 				}
 			},
 			onClose: async (result) => {
+				ProcessRegistry.unregister(workflow, job.id);
+				ProcessJobUseCase.spawnLock.delete(lockKey);
 				if (progressInterval) {
 					clearInterval(progressInterval);
 				}
+
+				// Check if job was cancelled by user
+				const wasCancelled = ProcessRegistry.wasCancelled(workflow, job.id);
+				ProcessRegistry.clearCancelled(workflow, job.id);
 
 				if (result.code === 0) {
 					jobRepository.updateJob(workflow, job.id, {
@@ -136,6 +155,12 @@ export class ProcessJobUseCase {
 						`${this.getWorkflowLabel(workflow)} Completed`,
 						`${job.filename} has finished processing.`,
 					);
+				} else if (wasCancelled || result.signal !== null) {
+					// Process was cancelled
+					jobRepository.updateJob(workflow, job.id, {
+						status: "failed",
+						errorMessage: "Cancelled",
+					});
 				} else {
 					jobRepository.updateJob(workflow, job.id, {
 						status: "failed",
@@ -148,6 +173,8 @@ export class ProcessJobUseCase {
 				}
 			},
 			onError: async (error) => {
+				ProcessRegistry.unregister(workflow, job.id);
+				ProcessJobUseCase.spawnLock.delete(lockKey);
 				if (progressInterval) {
 					clearInterval(progressInterval);
 				}
@@ -166,7 +193,9 @@ export class ProcessJobUseCase {
 		try {
 			const process = await commandExecutor.spawn(binary, args, callbacks);
 			jobRepository.appendLog(workflow, job.id, `PID: ${process.pid}`);
+			ProcessRegistry.register(workflow, job.id, process);
 		} catch (e) {
+			ProcessJobUseCase.spawnLock.delete(lockKey);
 			if (progressInterval) {
 				clearInterval(progressInterval);
 			}
@@ -509,12 +538,17 @@ export class ProcessJobUseCase {
 	 * Get human-readable label for workflow.
 	 */
 	private getWorkflowLabel(workflow: WorkflowType): string {
-		const labels: Record<WorkflowType, string> = {
-			compress: "Compression",
-			extract: "Extraction",
-			verify: "Verification",
-			info: "Info",
-		};
-		return labels[workflow];
+		switch (workflow) {
+			case "compress":
+				return "Compression";
+			case "extract":
+				return "Extraction";
+			case "verify":
+				return "Verification";
+			case "info":
+				return "Info";
+			default:
+				return "";
+		}
 	}
 }

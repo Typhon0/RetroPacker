@@ -31,6 +31,7 @@ import { useRepositories } from "@/presentation/context/RepositoryContext";
 import { ProcessJobUseCase } from "@/domain/usecases/ProcessJobUseCase";
 import { usePackerStore } from "@/stores/usePackerStore";
 import { useShallow } from "zustand/react/shallow";
+import { ProcessRegistry } from "@/services/ProcessRegistry";
 
 import type { TreeNode } from "./JobTreeBuilder";
 import { buildTree, getAllPaths, findNode } from "./JobTreeBuilder";
@@ -82,6 +83,56 @@ export function JobTable({
 		[processJobUseCase, repositories.fileSystem, workflow, settings],
 	);
 
+	const handleRemoveJob = useCallback(
+		(job: Job) => {
+			if (job.status === "processing") {
+				// Fire-and-forget: don't await to avoid blocking UI
+				ProcessRegistry.cancel(workflow, job.id).catch((e) => {
+					console.warn("Failed to cancel job process", e);
+				});
+			}
+			removeJob(workflow, job.id);
+		},
+		[removeJob, workflow],
+	);
+
+	// Stable ID-based callback factories for JobRow memoization
+	const handleStartJobById = useCallback(
+		(jobId: string) => {
+			const job = queue.find((j) => j.id === jobId);
+			if (job) handleStartJob(job);
+		},
+		[queue, handleStartJob],
+	);
+
+	const handleRemoveJobById = useCallback(
+		(jobId: string) => {
+			const job = queue.find((j) => j.id === jobId);
+			if (job) handleRemoveJob(job);
+		},
+		[queue, handleRemoveJob],
+	);
+
+	const handleSelectJobById = useCallback(
+		(jobId: string) => {
+			const job = queue.find((j) => j.id === jobId);
+			if (job) onSelectJob?.(job);
+		},
+		[queue, onSelectJob],
+	);
+
+	const handleUpdatePlatformById = useCallback(
+		(jobId: string, platform: Job["platformOverride"]) => {
+			updateJob(workflow, jobId, {
+				platformOverride: platform,
+				system: platform
+					? platform.charAt(0).toUpperCase() + platform.slice(1)
+					: undefined,
+			});
+		},
+		[updateJob, workflow],
+	);
+
 	const handleStartFolder = useCallback(
 		async (node: TreeNode) => {
 			const startPendingInNode = async (targetNode: TreeNode) => {
@@ -102,6 +153,7 @@ export function JobTable({
 	// Filters
 	const [statusFilter, setStatusFilter] = useState<string>("all");
 	const [systemFilter, setSystemFilter] = useState<string>("all");
+	const [folderFilter, setFolderFilter] = useState<string>("all");
 
 	// Filter jobs
 	const filteredQueue = useMemo(() => {
@@ -120,6 +172,14 @@ export function JobTable({
 
 	// Build tree from filtered jobs
 	const tree = useMemo(() => buildTree(filteredQueue), [filteredQueue]);
+
+	// Top-level folders for tree filter
+	const topLevelFolders = useMemo(() => {
+		if (!tree.path) {
+			return Object.values(tree.children);
+		}
+		return [tree];
+	}, [tree]);
 
 	// Expanded state
 	const [expandedPaths, setExpandedPaths] = useState<Record<string, boolean>>(
@@ -192,6 +252,36 @@ export function JobTable({
 		setExpandedPaths(expanded);
 	}, [tree]);
 
+	const getNodePlatform = useCallback((node: TreeNode): Job["platformOverride"] | undefined => {
+		const platforms = new Set<Job["platformOverride"]>();
+		const normalize = (job: Job): Job["platformOverride"] | undefined => {
+			if (job.platformOverride && job.platformOverride !== "auto") {
+				return job.platformOverride;
+			}
+			const system = job.system.toLowerCase();
+			if (
+				["ps1", "ps2", "psp", "saturn", "dreamcast", "gamecube", "wii"].includes(
+					system,
+				)
+			) {
+				return system as Job["platformOverride"];
+			}
+			return undefined;
+		};
+
+		const visit = (current: TreeNode) => {
+			current.jobs.forEach((job) => {
+				const platform = normalize(job);
+				if (platform) platforms.add(platform);
+			});
+			Object.values(current.children).forEach(visit);
+		};
+
+		visit(node);
+		if (platforms.size === 1) return Array.from(platforms)[0];
+		return undefined;
+	}, []);
+
 	// Recursive render function using extracted components
 	const renderNode = useCallback(
 		(node: TreeNode, depth: number = 0): React.ReactNode[] => {
@@ -199,6 +289,7 @@ export function JobTable({
 			const isExpanded = expandedPaths[node.path] ?? true;
 			const hasContent =
 				node.jobs.length > 0 || Object.keys(node.children).length > 0;
+			const inferredPlatform = getNodePlatform(node);
 
 			// Render folder row (skip root)
 			if (node.path && hasContent) {
@@ -209,6 +300,7 @@ export function JobTable({
 						depth={depth}
 						isExpanded={isExpanded}
 						folderOverride={folderOverrides[node.path]}
+						inferredPlatform={inferredPlatform}
 						onToggle={() => togglePath(node.path)}
 						onStartFolder={() => handleStartFolder(node)}
 						onSetPlatform={(platform) => setFolderPlatform(node.path, platform)}
@@ -235,17 +327,10 @@ export function JobTable({
 							depth={jobDepth}
 							isSelected={selectedJobId === job.id}
 							folderOverride={getFolderOverrideForJob(job.path)}
-							onSelect={() => onSelectJob?.(job)}
-							onStart={() => handleStartJob(job)}
-							onRemove={() => removeJob(workflow, job.id)}
-							onUpdatePlatform={(platform) => {
-								updateJob(workflow, job.id, {
-									platformOverride: platform,
-									system: platform
-										? platform.charAt(0).toUpperCase() + platform.slice(1)
-										: job.system,
-								});
-							}}
+							onSelect={handleSelectJobById}
+							onStart={handleStartJobById}
+							onRemove={handleRemoveJobById}
+							onUpdatePlatform={handleUpdatePlatformById}
 						/>,
 					);
 				}
@@ -256,18 +341,25 @@ export function JobTable({
 		[
 			expandedPaths,
 			folderOverrides,
+			getNodePlatform,
 			handleStartFolder,
-			handleStartJob,
 			getFolderOverrideForJob,
-			onSelectJob,
-			removeJob,
 			selectedJobId,
 			setFolderPlatform,
 			togglePath,
-			updateJob,
 			workflow,
+			// Stable ID-based callbacks
+			handleSelectJobById,
+			handleStartJobById,
+			handleRemoveJobById,
+			handleUpdatePlatformById,
 		],
 	);
+
+	const filteredRoot = useMemo(() => {
+		if (folderFilter === "all") return tree;
+		return findNode(tree, folderFilter) ?? tree;
+	}, [folderFilter, tree]);
 
 	return (
 		<div className="space-y-2 flex flex-col h-full min-h-0">
@@ -297,6 +389,20 @@ export function JobTable({
 							{uniqueSystems.map((sys) => (
 								<SelectItem key={sys} value={sys}>
 									{sys}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+
+					<Select value={folderFilter} onValueChange={setFolderFilter}>
+						<SelectTrigger className="w-[160px] h-8">
+							<SelectValue placeholder="Folder" />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="all">All Folders</SelectItem>
+							{topLevelFolders.map((node) => (
+								<SelectItem key={node.path} value={node.path}>
+									{node.name}
 								</SelectItem>
 							))}
 						</SelectContent>
@@ -342,7 +448,7 @@ export function JobTable({
 								</TableCell>
 							</TableRow>
 						) : (
-							renderNode(tree)
+							renderNode(filteredRoot)
 						)}
 					</TableBody>
 				</Table>
