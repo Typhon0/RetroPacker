@@ -6,6 +6,8 @@ import { Command } from "@tauri-apps/plugin-shell";
 export class ProcessRegistry {
 	private static readonly processes = new Map<string, SpawnedProcess>();
 	private static readonly cancelledJobs = new Set<string>();
+	// Workflow-level cancellation flag to block new spawns during cancelAll
+	private static readonly cancelledWorkflows = new Set<WorkflowType>();
 
 	private static key(workflow: WorkflowType, jobId: string): string {
 		return `${workflow}:${jobId}`;
@@ -23,13 +25,15 @@ export class ProcessRegistry {
 			console.log(
 				`[ProcessRegistry] Job ${key} was cancelled before registration. Terminating now.`,
 			);
-			// We must register it first so that terminateProcess can work (it doesn't use the map, but good for consistency)
-			// Actually terminateProcess takes the process object directly.
-			// But we should put it in the map so that if terminateProcess hangs/waits, 'cancelAll' can still find it?
-			// But 'cancel' logic deletes it.
-			// Let's just kill it and NOT add to map to avoid zombie entries if onClose doesn't clean up fast enough?
-			// But onClose cleans up based on ID.
-			// Safer to just kill and let onClose handle invalidation.
+			ProcessRegistry.terminateProcess(process).catch(console.error);
+			return;
+		}
+
+		// Race condition fix: Check if entire workflow was cancelled while spawning
+		if (ProcessRegistry.cancelledWorkflows.has(workflow)) {
+			console.log(
+				`[ProcessRegistry] Workflow ${workflow} was cancelled. Terminating ${key} immediately.`,
+			);
 			ProcessRegistry.terminateProcess(process).catch(console.error);
 			return;
 		}
@@ -90,6 +94,12 @@ export class ProcessRegistry {
 	}
 
 	static async cancelAll(workflow: WorkflowType): Promise<void> {
+		// Set workflow cancellation flag FIRST to block any pending spawns
+		ProcessRegistry.cancelledWorkflows.add(workflow);
+		console.log(
+			`[ProcessRegistry] Workflow ${workflow} marked for cancellation`,
+		);
+
 		const prefix = `${workflow}:`;
 		const entries = Array.from(ProcessRegistry.processes.entries());
 		const terminationPromises: Promise<void>[] = [];
@@ -107,6 +117,25 @@ export class ProcessRegistry {
 
 		// Wait for all terminations in parallel
 		await Promise.all(terminationPromises);
+	}
+
+	/**
+	 * Check if a workflow is currently being cancelled.
+	 * Use this to prevent starting new jobs during cancellation.
+	 */
+	static isWorkflowCancelled(workflow: WorkflowType): boolean {
+		return ProcessRegistry.cancelledWorkflows.has(workflow);
+	}
+
+	/**
+	 * Clear the workflow cancellation flag.
+	 * Call this after the queue is cleared to allow new jobs.
+	 */
+	static clearWorkflowCancellation(workflow: WorkflowType): void {
+		ProcessRegistry.cancelledWorkflows.delete(workflow);
+		console.log(
+			`[ProcessRegistry] Workflow ${workflow} cancellation flag cleared`,
+		);
 	}
 
 	private static async terminateProcess(

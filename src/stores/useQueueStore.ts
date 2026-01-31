@@ -110,6 +110,10 @@ export const useQueueStore = create<QueueState>((set, get) => ({
 				...state.queues,
 				[workflow]: [],
 			},
+			isProcessing: {
+				...state.isProcessing,
+				[workflow]: false,
+			},
 		})),
 
 	appendLog: (workflow, id, line) =>

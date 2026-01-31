@@ -85,7 +85,13 @@ function AppContent() {
 								<Button
 									variant={isProcessing ? "secondary" : "default"}
 									size="sm"
-									onClick={() => setProcessing(activeWorkflow, !isProcessing)}
+									onClick={() => {
+										if (!isProcessing) {
+											// Only clear the cancellation flag when we explicitly start
+											ProcessRegistry.clearWorkflowCancellation(activeWorkflow);
+										}
+										setProcessing(activeWorkflow, !isProcessing);
+									}}
 								>
 									{isProcessing ? (
 										<Pause className="h-4 w-4 mr-2" />
@@ -101,6 +107,8 @@ function AppContent() {
 										// Fire-and-forget: don't await to avoid blocking UI
 										ProcessRegistry.cancelAll(activeWorkflow);
 										clearQueue(activeWorkflow);
+										// Do NOT clear cancellation flag here. It must remain set
+										// until the user clicks Start again to prevent race conditions.
 									}}
 								>
 									<Trash2 className="h-4 w-4 mr-2" />

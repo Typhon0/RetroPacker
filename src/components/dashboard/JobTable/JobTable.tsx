@@ -84,12 +84,13 @@ export function JobTable({
 	);
 
 	const handleRemoveJob = useCallback(
-		(job: Job) => {
+		async (job: Job) => {
 			if (job.status === "processing") {
-				// Fire-and-forget: don't await to avoid blocking UI
-				ProcessRegistry.cancel(workflow, job.id).catch((e) => {
+				try {
+					await ProcessRegistry.cancel(workflow, job.id);
+				} catch (e) {
 					console.warn("Failed to cancel job process", e);
-				});
+				}
 			}
 			removeJob(workflow, job.id);
 		},
@@ -252,35 +253,44 @@ export function JobTable({
 		setExpandedPaths(expanded);
 	}, [tree]);
 
-	const getNodePlatform = useCallback((node: TreeNode): Job["platformOverride"] | undefined => {
-		const platforms = new Set<Job["platformOverride"]>();
-		const normalize = (job: Job): Job["platformOverride"] | undefined => {
-			if (job.platformOverride && job.platformOverride !== "auto") {
-				return job.platformOverride;
-			}
-			const system = job.system.toLowerCase();
-			if (
-				["ps1", "ps2", "psp", "saturn", "dreamcast", "gamecube", "wii"].includes(
-					system,
-				)
-			) {
-				return system as Job["platformOverride"];
-			}
+	const getNodePlatform = useCallback(
+		(node: TreeNode): Job["platformOverride"] | undefined => {
+			const platforms = new Set<Job["platformOverride"]>();
+			const normalize = (job: Job): Job["platformOverride"] | undefined => {
+				if (job.platformOverride && job.platformOverride !== "auto") {
+					return job.platformOverride;
+				}
+				const system = job.system.toLowerCase();
+				if (
+					[
+						"ps1",
+						"ps2",
+						"psp",
+						"saturn",
+						"dreamcast",
+						"gamecube",
+						"wii",
+					].includes(system)
+				) {
+					return system as Job["platformOverride"];
+				}
+				return undefined;
+			};
+
+			const visit = (current: TreeNode) => {
+				current.jobs.forEach((job) => {
+					const platform = normalize(job);
+					if (platform) platforms.add(platform);
+				});
+				Object.values(current.children).forEach(visit);
+			};
+
+			visit(node);
+			if (platforms.size === 1) return Array.from(platforms)[0];
 			return undefined;
-		};
-
-		const visit = (current: TreeNode) => {
-			current.jobs.forEach((job) => {
-				const platform = normalize(job);
-				if (platform) platforms.add(platform);
-			});
-			Object.values(current.children).forEach(visit);
-		};
-
-		visit(node);
-		if (platforms.size === 1) return Array.from(platforms)[0];
-		return undefined;
-	}, []);
+		},
+		[],
+	);
 
 	// Recursive render function using extracted components
 	const renderNode = useCallback(

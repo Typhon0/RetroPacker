@@ -72,10 +72,20 @@ export class ProcessJobUseCase {
 		settings: ProcessJobSettings,
 	): Promise<void> {
 		const lockKey = `${workflow}:${job.id}`;
-		
+
+		// Check if workflow is being cancelled - bail out early
+		if (ProcessRegistry.isWorkflowCancelled(workflow)) {
+			console.log(
+				`[ProcessJobUseCase] Workflow ${workflow} is cancelled, skipping job ${job.id}`,
+			);
+			return;
+		}
+
 		// Prevent double-spawning: check if this job is already being started
 		if (ProcessJobUseCase.spawnLock.has(lockKey)) {
-			console.warn(`[ProcessJobUseCase] Job ${lockKey} already starting, skipping duplicate`);
+			console.warn(
+				`[ProcessJobUseCase] Job ${lockKey} already starting, skipping duplicate`,
+			);
 			return;
 		}
 		ProcessJobUseCase.spawnLock.add(lockKey);

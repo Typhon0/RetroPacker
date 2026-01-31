@@ -40,6 +40,11 @@ export function useQueueProcessor(workflow: WorkflowType) {
 			// 	);
 			// }
 
+			// DEBUG: Log processing state
+			console.log(
+				`[QueueProcessor:${workflow}] Effect triggered - isProcessing: ${isProcessing}, queueLength: ${queue.length}, processingCount: ${processingCount}`,
+			);
+
 			if (isProcessing && processingCount < concurrency) {
 				if (nextJob) {
 					try {
