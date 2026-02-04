@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { WorkflowTabs } from "@/components/dashboard/WorkflowTabs";
 import { GlobalSettings } from "@/components/dashboard/GlobalSettings";
 import { useQueueProcessor } from "@/hooks/useQueueProcessor";
@@ -11,6 +11,10 @@ import { usePackerStore } from "@/stores/usePackerStore";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { RepositoryProvider } from "@/presentation/context/RepositoryContext";
 import { ProcessRegistry } from "@/services/ProcessRegistry";
+import { cn } from "@/lib/utils";
+
+const MIN_CONCURRENCY = 1;
+const MAX_CONCURRENCY = 16;
 
 /**
  * Inner App Content - requires RepositoryProvider to be available.
@@ -34,8 +38,14 @@ function AppContent() {
 	);
 	const setProcessing = useQueueStore((state) => state.setProcessing);
 
+	// Ref to track initialization status to prevent strict mode double-invocations
+	const hasInitialized = useRef(false);
+
 	// Auto-detect concurrency on first load
 	useEffect(() => {
+		if (hasInitialized.current) return;
+
+		// Only auto-detect if we're on the default small value
 		if (
 			concurrency === 2 &&
 			typeof navigator !== "undefined" &&
@@ -47,12 +57,45 @@ function AppContent() {
 			);
 			if (recommended > 2) {
 				setConcurrency(recommended);
-				console.log(
-					`Auto-detected hardware: setting concurrency to ${recommended}`,
-				);
 			}
 		}
+
+		hasInitialized.current = true;
 	}, [concurrency, setConcurrency]);
+
+	const handleConcurrencyChange = useCallback(
+		(e: React.ChangeEvent<HTMLInputElement>) => {
+			const rawValue = parseInt(e.target.value);
+			// Validate and clamp input
+			if (Number.isNaN(rawValue)) return; // Don't update on empty/invalid
+			const clamped = Math.min(
+				MAX_CONCURRENCY,
+				Math.max(MIN_CONCURRENCY, rawValue),
+			);
+			setConcurrency(clamped);
+		},
+		[setConcurrency],
+	);
+
+	const handleToggleProcessing = useCallback(() => {
+		if (!isProcessing) {
+			// Only clear the cancellation flag when we explicitly start
+			ProcessRegistry.clearWorkflowCancellation(activeWorkflow);
+		}
+		setProcessing(activeWorkflow, !isProcessing);
+	}, [activeWorkflow, isProcessing, setProcessing]);
+
+	const handleClearQueue = useCallback(async () => {
+		try {
+			// Fire-and-forget: don't await to avoid blocking UI
+			await ProcessRegistry.cancelAll(activeWorkflow);
+			clearQueue(activeWorkflow);
+			// Do NOT clear cancellation flag here. It must remain set
+			// until the user clicks Start again to prevent race conditions.
+		} catch (error) {
+			console.error("Failed to cancel processes during clear", error);
+		}
+	}, [activeWorkflow, clearQueue]);
 
 	return (
 		<TooltipProvider>
@@ -71,11 +114,15 @@ function AppContent() {
 							<span>Concurrency:</span>
 							<input
 								type="number"
-								min={1}
-								max={16}
-								className="w-12 bg-input border rounded px-1 py-0.5 text-center text-foreground"
+								min={MIN_CONCURRENCY}
+								max={MAX_CONCURRENCY}
+								className={cn(
+									"flex h-8 w-14 rounded-md border border-input bg-transparent px-2 py-1 text-sm shadow-sm transition-colors",
+									"focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+									"text-center",
+								)}
 								value={concurrency}
-								onChange={(e) => setConcurrency(parseInt(e.target.value) || 1)}
+								onChange={handleConcurrencyChange}
 							/>
 						</div>
 						<GlobalSettings />
@@ -85,13 +132,7 @@ function AppContent() {
 								<Button
 									variant={isProcessing ? "secondary" : "default"}
 									size="sm"
-									onClick={() => {
-										if (!isProcessing) {
-											// Only clear the cancellation flag when we explicitly start
-											ProcessRegistry.clearWorkflowCancellation(activeWorkflow);
-										}
-										setProcessing(activeWorkflow, !isProcessing);
-									}}
+									onClick={handleToggleProcessing}
 								>
 									{isProcessing ? (
 										<Pause className="h-4 w-4 mr-2" />
@@ -103,13 +144,7 @@ function AppContent() {
 								<Button
 									variant="destructive"
 									size="sm"
-									onClick={() => {
-										// Fire-and-forget: don't await to avoid blocking UI
-										ProcessRegistry.cancelAll(activeWorkflow);
-										clearQueue(activeWorkflow);
-										// Do NOT clear cancellation flag here. It must remain set
-										// until the user clicks Start again to prevent race conditions.
-									}}
+									onClick={handleClearQueue}
 								>
 									<Trash2 className="h-4 w-4 mr-2" />
 									Clear
