@@ -9,9 +9,10 @@
  */
 
 import { useQueueStore } from "../../stores/useQueueStore";
-import { IJobRepository } from "../../domain/repositories/IJobRepository";
-import { JobProps, JobUpdate } from "../../domain/entities/Job";
-import { WorkflowType } from "../../domain/types/workflow.types";
+import type { Job } from "../../stores/useQueueStore";
+import type { IJobRepository } from "../../domain/repositories/IJobRepository";
+import type { JobProps, JobUpdate } from "../../domain/entities/Job";
+import type { WorkflowType } from "../../domain/types/workflow.types";
 
 /**
  * Adapter that implements IJobRepository using the existing Zustand store.
@@ -23,7 +24,7 @@ export class ZustandJobRepository implements IJobRepository {
 	 */
 	getJobs(workflow: WorkflowType): JobProps[] {
 		const state = useQueueStore.getState();
-		return state.queues[workflow] as JobProps[];
+		return state.queues[workflow];
 	}
 
 	/**
@@ -31,9 +32,7 @@ export class ZustandJobRepository implements IJobRepository {
 	 */
 	getJob(workflow: WorkflowType, id: string): JobProps | undefined {
 		const state = useQueueStore.getState();
-		return state.queues[workflow].find((job) => job.id === id) as
-			| JobProps
-			| undefined;
+		return state.queues[workflow].find((job) => job.id === id);
 	}
 
 	/**
@@ -41,8 +40,7 @@ export class ZustandJobRepository implements IJobRepository {
 	 */
 	addJob(workflow: WorkflowType, job: JobProps): void {
 		const state = useQueueStore.getState();
-		// Cast to the store's Job type (they're compatible)
-		state.addJob(workflow, job as Parameters<typeof state.addJob>[1]);
+		state.addJob(workflow, job as Job);
 	}
 
 	/**
@@ -50,15 +48,7 @@ export class ZustandJobRepository implements IJobRepository {
 	 */
 	updateJob(workflow: WorkflowType, id: string, updates: JobUpdate): void {
 		const state = useQueueStore.getState();
-		// Convert readonly array to mutable if present
-		const mutableUpdates = updates.outputLog
-			? { ...updates, outputLog: [...updates.outputLog] }
-			: updates;
-		state.updateJob(
-			workflow,
-			id,
-			mutableUpdates as Parameters<typeof state.updateJob>[2],
-		);
+		state.updateJob(workflow, id, updates as Partial<Job>);
 	}
 
 	/**
@@ -110,7 +100,7 @@ export class ZustandJobRepository implements IJobRepository {
 	): () => void {
 		// Use standard Zustand subscribe with selector
 		return useQueueStore.subscribe((state) => {
-			callback(state.queues[workflow] as JobProps[]);
+			callback(state.queues[workflow]);
 		});
 	}
 }

@@ -62,6 +62,7 @@ export function JobTable({
 			customCompression: state.customCompression,
 			chd: state.chd,
 			dolphin: state.dolphin,
+			deleteSourceAfterSuccess: state.deleteSourceAfterSuccess,
 		})),
 	);
 

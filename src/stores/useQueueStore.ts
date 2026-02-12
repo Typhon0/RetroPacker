@@ -1,42 +1,21 @@
 import { create } from "zustand";
+import { immer } from "zustand/middleware/immer";
+import type { JobProps } from "@/domain/entities/Job";
+import type { JobStatus, WorkflowType } from "@/domain/types/workflow.types";
 
-export type JobStatus = "pending" | "processing" | "completed" | "failed";
-export type WorkflowType = "compress" | "extract" | "verify" | "info";
+// Re-export domain types for backward compatibility
+export type { JobStatus, WorkflowType };
 
-export interface Job {
-	id: string;
-	filename: string;
-	path: string;
-	system: string; // e.g., 'PS2', 'DC', 'Wii'
-	status: JobStatus;
-	progress: number;
-	originalSize: number;
-	compressedSize?: number;
-	outputLog: string[];
-	errorMessage?: string;
-	strategy: "createcd" | "createdvd" | "raw";
-	startTime?: number;
-	etaSeconds?: number;
-	// Multi-disc grouping
-	discGroup?: string;
-	discNumber?: number;
-	// Verification
-	sourceHash?: string;
-	verificationResult?: "pass" | "fail" | "unknown";
-	// Per-job platform override
-	platformOverride?:
-		| "auto"
-		| "ps1"
-		| "ps2"
-		| "saturn"
-		| "dreamcast"
-		| "gamecube"
-		| "wii";
-	// Info results (for info workflow)
-	gameId?: string;
-	gameTitle?: string;
-	region?: string;
-}
+/**
+ * Mutable version of JobProps for Zustand store state.
+ * Domain JobProps uses `readonly` modifiers, but Zustand
+ * needs mutable state for efficient updates.
+ */
+export type Job = {
+	-readonly [K in keyof JobProps]: JobProps[K] extends readonly (infer U)[]
+		? U[]
+		: JobProps[K];
+};
 
 // Empty queue template
 const createEmptyQueues = (): Record<WorkflowType, Job[]> => ({
@@ -74,67 +53,54 @@ interface QueueState {
 	getJob: (workflow: WorkflowType, id: string) => Job | undefined;
 }
 
-export const useQueueStore = create<QueueState>((set, get) => ({
-	queues: createEmptyQueues(),
-	isProcessing: createEmptyProcessing(),
+export const useQueueStore = create<QueueState>()(
+	immer((set, get) => ({
+		queues: createEmptyQueues(),
+		isProcessing: createEmptyProcessing(),
 
-	addJob: (workflow, job) =>
-		set((state) => ({
-			queues: {
-				...state.queues,
-				[workflow]: [...state.queues[workflow], job],
-			},
-		})),
+		addJob: (workflow, job) =>
+			set((state) => {
+				state.queues[workflow].push(job);
+			}),
 
-	removeJob: (workflow, id) =>
-		set((state) => ({
-			queues: {
-				...state.queues,
-				[workflow]: state.queues[workflow].filter((j) => j.id !== id),
-			},
-		})),
+		removeJob: (workflow, id) =>
+			set((state) => {
+				const queue = state.queues[workflow];
+				const idx = queue.findIndex((j) => j.id === id);
+				if (idx !== -1) {
+					queue.splice(idx, 1);
+				}
+			}),
 
-	updateJob: (workflow, id, updates) =>
-		set((state) => ({
-			queues: {
-				...state.queues,
-				[workflow]: state.queues[workflow].map((j) =>
-					j.id === id ? { ...j, ...updates } : j,
-				),
-			},
-		})),
+		updateJob: (workflow, id, updates) =>
+			set((state) => {
+				const job = state.queues[workflow].find((j) => j.id === id);
+				if (job) {
+					Object.assign(job, updates);
+				}
+			}),
 
-	clearQueue: (workflow) =>
-		set((state) => ({
-			queues: {
-				...state.queues,
-				[workflow]: [],
-			},
-			isProcessing: {
-				...state.isProcessing,
-				[workflow]: false,
-			},
-		})),
+		clearQueue: (workflow) =>
+			set((state) => {
+				state.queues[workflow] = [];
+				state.isProcessing[workflow] = false;
+			}),
 
-	appendLog: (workflow, id, line) =>
-		set((state) => ({
-			queues: {
-				...state.queues,
-				[workflow]: state.queues[workflow].map((j) =>
-					j.id === id ? { ...j, outputLog: [...j.outputLog, line] } : j,
-				),
-			},
-		})),
+		appendLog: (workflow, id, line) =>
+			set((state) => {
+				const job = state.queues[workflow].find((j) => j.id === id);
+				if (job) {
+					job.outputLog.push(line);
+				}
+			}),
 
-	setProcessing: (workflow, isProcessing) =>
-		set((state) => ({
-			isProcessing: {
-				...state.isProcessing,
-				[workflow]: isProcessing,
-			},
-		})),
+		setProcessing: (workflow, isProcessing) =>
+			set((state) => {
+				state.isProcessing[workflow] = isProcessing;
+			}),
 
-	getQueue: (workflow) => get().queues[workflow],
+		getQueue: (workflow) => get().queues[workflow],
 
-	getJob: (workflow, id) => get().queues[workflow].find((j) => j.id === id),
-}));
+		getJob: (workflow, id) => get().queues[workflow].find((j) => j.id === id),
+	})),
+);

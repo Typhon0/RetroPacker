@@ -43,6 +43,7 @@ export interface ProcessJobSettings {
 	readonly customCompression: string;
 	readonly chd: ChdSettings;
 	readonly dolphin: DolphinSettings;
+	readonly deleteSourceAfterSuccess: boolean;
 }
 
 /**
@@ -161,6 +162,29 @@ export class ProcessJobUseCase {
 						progress: 100,
 						etaSeconds: 0,
 					});
+
+					// Delete source file if setting is enabled (compress/extract only)
+					if (
+						settings.deleteSourceAfterSuccess &&
+						(workflow === "compress" || workflow === "extract")
+					) {
+						try {
+							await this.deps.fileSystem.moveToTrash(job.path);
+							jobRepository.appendLog(
+								workflow,
+								job.id,
+								`Source file moved to recycle bin: ${job.filename}`,
+							);
+						} catch (err) {
+							const msg = err instanceof Error ? err.message : String(err);
+							jobRepository.appendLog(
+								workflow,
+								job.id,
+								`Warning: Failed to delete source file: ${msg}`,
+							);
+						}
+					}
+
 					await notificationService.notifySuccess(
 						`${this.getWorkflowLabel(workflow)} Completed`,
 						`${job.filename} has finished processing.`,

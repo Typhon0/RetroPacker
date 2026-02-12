@@ -1,32 +1,22 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { WorkflowType } from "./useQueueStore";
+import type { WorkflowType } from "@/domain/types/workflow.types";
+import type {
+	CompressionPreset,
+	MediaType,
+	ChdSettings,
+	DolphinSettings,
+} from "@/domain/types/settings.types";
+import type { Platform } from "@/domain/types/platform.types";
 
-export type CompressionPreset = "balanced" | "max" | "fast" | "raw" | "custom";
-export type MediaType = "auto" | "cd" | "dvd" | "hdd" | "ld" | "raw";
-export type Platform =
-	| "auto"
-	| "ps1"
-	| "ps2"
-	| "saturn"
-	| "dreamcast"
-	| "gamecube"
-	| "wii";
-
-// Tool-specific settings
-export interface ChdSettings {
-	hunkSize?: number; // Bytes (e.g., 2048)
-	mediaType: MediaType;
-}
-
-export interface DolphinSettings {
-	blockSize: number; // Bytes (e.g., 131072 for 128KB)
-	format: "rvz" | "iso" | "gcz" | "wia";
-	compressionAlgorithm: "zstd" | "lzma" | "none";
-	scrub: boolean;
-	verifyAlgorithm: "md5" | "sha1" | "crc32";
-	extractGameOnly: boolean;
-}
+// Re-export domain types for backward compatibility
+export type {
+	CompressionPreset,
+	MediaType,
+	Platform,
+	ChdSettings,
+	DolphinSettings,
+};
 
 interface PackerState {
 	// UI State

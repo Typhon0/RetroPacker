@@ -6,17 +6,16 @@
  */
 
 import { usePackerStore } from "../../stores/usePackerStore";
-import {
+import type {
 	ISettingsRepository,
 	AppSettings,
 } from "../../domain/repositories/ISettingsRepository";
-import {
+import type {
 	CompressionPreset,
 	ChdSettings,
 	DolphinSettings,
 } from "../../domain/types/settings.types";
-import { Platform } from "../../domain/types/platform.types";
-import { WorkflowType } from "../../domain/types/workflow.types";
+import type { WorkflowType } from "../../domain/types/workflow.types";
 
 /**
  * Adapter that implements ISettingsRepository using the existing Zustand store.
@@ -28,13 +27,13 @@ export class ZustandSettingsRepository implements ISettingsRepository {
 	getSettings(): AppSettings {
 		const state = usePackerStore.getState();
 		return {
-			activeWorkflow: state.activeWorkflow as WorkflowType,
+			activeWorkflow: state.activeWorkflow,
 			preset: state.preset,
 			concurrency: state.concurrency,
 			customCompression: state.customCompression,
 			chd: state.chd,
 			dolphin: state.dolphin,
-			platform: state.platform as Platform,
+			platform: state.platform,
 			deleteSourceAfterSuccess: state.deleteSourceAfterSuccess,
 		};
 	}
@@ -43,7 +42,7 @@ export class ZustandSettingsRepository implements ISettingsRepository {
 	 * Get the current active workflow.
 	 */
 	getActiveWorkflow(): WorkflowType {
-		return usePackerStore.getState().activeWorkflow as WorkflowType;
+		return usePackerStore.getState().activeWorkflow;
 	}
 
 	/**
@@ -135,13 +134,13 @@ export class ZustandSettingsRepository implements ISettingsRepository {
 	subscribe(callback: (settings: AppSettings) => void): () => void {
 		return usePackerStore.subscribe((state) => {
 			callback({
-				activeWorkflow: state.activeWorkflow as WorkflowType,
+				activeWorkflow: state.activeWorkflow,
 				preset: state.preset,
 				concurrency: state.concurrency,
 				customCompression: state.customCompression,
 				chd: state.chd,
 				dolphin: state.dolphin,
-				platform: state.platform as Platform,
+				platform: state.platform,
 				deleteSourceAfterSuccess: state.deleteSourceAfterSuccess,
 			});
 		});

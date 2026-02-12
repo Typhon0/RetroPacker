@@ -76,6 +76,7 @@ export function useJobActions(workflow: WorkflowType): JobActions {
 				customCompression: settings.customCompression,
 				chd: settings.chd,
 				dolphin: settings.dolphin,
+				deleteSourceAfterSuccess: settings.deleteSourceAfterSuccess,
 			};
 
 			await processJobUseCase.execute(
