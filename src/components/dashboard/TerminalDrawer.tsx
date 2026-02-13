@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Job } from "@/stores/useQueueStore";
 import { cn } from "@/lib/utils";
 import { X, Terminal } from "lucide-react";
@@ -10,15 +10,88 @@ interface TerminalDrawerProps {
 	onClose: () => void;
 }
 
+const LINE_HEIGHT_PX = 18;
+const OVERSCAN_LINES = 24;
+const BOTTOM_STICKY_THRESHOLD_PX = 20;
+
 export function TerminalDrawer({ job, isOpen, onClose }: TerminalDrawerProps) {
 	const scrollRef = useRef<HTMLDivElement>(null);
+	const lastJobIdRef = useRef<string | undefined>(undefined);
+	const isAtBottomRef = useRef(true);
+	const [scrollTop, setScrollTop] = useState(0);
+	const [viewportHeight, setViewportHeight] = useState(0);
 
-	// Auto-scroll to bottom on new logs
+	const outputLog = job?.outputLog ?? [];
+	const totalLines = outputLog.length;
+
+	const visibleWindow = useMemo(() => {
+		const visibleCount = Math.max(
+			1,
+			Math.ceil(viewportHeight / LINE_HEIGHT_PX) + OVERSCAN_LINES * 2,
+		);
+		const start = Math.max(
+			0,
+			Math.floor(scrollTop / LINE_HEIGHT_PX) - OVERSCAN_LINES,
+		);
+		const end = Math.min(totalLines, start + visibleCount);
+		return {
+			start,
+			end,
+			offsetY: start * LINE_HEIGHT_PX,
+			totalHeight: Math.max(totalLines * LINE_HEIGHT_PX, viewportHeight),
+		};
+	}, [scrollTop, totalLines, viewportHeight]);
+
+	const visibleLines = useMemo(
+		() => outputLog.slice(visibleWindow.start, visibleWindow.end),
+		[outputLog, visibleWindow.end, visibleWindow.start],
+	);
+
+	const updateBottomStickiness = useCallback(() => {
+		if (!scrollRef.current) return;
+		const {
+			scrollHeight,
+			scrollTop: currentTop,
+			clientHeight,
+		} = scrollRef.current;
+		isAtBottomRef.current =
+			scrollHeight - currentTop - clientHeight <= BOTTOM_STICKY_THRESHOLD_PX;
+	}, []);
+
+	// Track viewport size for virtualized rendering.
 	useEffect(() => {
-		if (scrollRef.current) {
-			scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+		if (!scrollRef.current || !isOpen) return;
+
+		const element = scrollRef.current;
+		setViewportHeight(element.clientHeight);
+		setScrollTop(element.scrollTop);
+		updateBottomStickiness();
+
+		const observer = new ResizeObserver(() => {
+			setViewportHeight(element.clientHeight);
+		});
+		observer.observe(element);
+
+		return () => observer.disconnect();
+	}, [isOpen, updateBottomStickiness]);
+
+	// Keep tail-follow behavior when currently pinned to bottom.
+	useEffect(() => {
+		if (!scrollRef.current || !isOpen) return;
+
+		const jobChanged = lastJobIdRef.current !== job?.id;
+		if (jobChanged) {
+			lastJobIdRef.current = job?.id;
+			isAtBottomRef.current = true;
 		}
-	}, [job?.outputLog]);
+
+		if (!isAtBottomRef.current) return;
+
+		const element = scrollRef.current;
+		element.scrollTop = element.scrollHeight;
+		setScrollTop(element.scrollTop);
+		updateBottomStickiness();
+	}, [isOpen, job?.id, outputLog, updateBottomStickiness]);
 
 	return (
 		<div
@@ -44,15 +117,34 @@ export function TerminalDrawer({ job, isOpen, onClose }: TerminalDrawerProps) {
 
 			<div
 				ref={scrollRef}
-				className="flex-1 overflow-y-auto p-4 font-mono text-xs text-zinc-300 space-y-1"
+				onScroll={() => {
+					if (!scrollRef.current) return;
+					setScrollTop(scrollRef.current.scrollTop);
+					updateBottomStickiness();
+				}}
+				className="flex-1 overflow-auto p-4 font-mono text-xs text-zinc-300"
 			>
 				{job ? (
-					job.outputLog.length > 0 ? (
-						job.outputLog.map((line, i) => (
-							<div key={i} className="whitespace-pre-wrap">
-								{line}
+					totalLines > 0 ? (
+						<div
+							className="relative"
+							style={{ height: `${visibleWindow.totalHeight}px` }}
+						>
+							<div
+								style={{
+									transform: `translateY(${visibleWindow.offsetY}px)`,
+								}}
+							>
+								{visibleLines.map((line, i) => (
+									<div
+										key={visibleWindow.start + i}
+										className="h-[18px] leading-[18px] whitespace-pre"
+									>
+										{line}
+									</div>
+								))}
 							</div>
-						))
+						</div>
 					) : (
 						<div className="text-zinc-500 italic">Waiting for logs...</div>
 					)

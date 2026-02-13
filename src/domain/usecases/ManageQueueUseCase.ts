@@ -45,16 +45,16 @@ export const WORKFLOW_FILE_CONFIGS: Record<WorkflowType, WorkflowFileConfig> = {
 		supportedText: ".iso, .cue, .bin, .gdi, .gcm",
 	},
 	extract: {
-		extensions: ["chd", "rvz", "cso", "gcz"],
+		extensions: ["chd", "rvz", "gcz", "wbfs"],
 		filterName: "Compressed Archives",
 		dropLabel: "Drop compressed files to extract",
-		supportedText: ".chd, .rvz, .cso, .gcz",
+		supportedText: ".chd, .rvz, .gcz, .wbfs",
 	},
 	verify: {
-		extensions: ["chd", "rvz", "nsz", "xcz"],
+		extensions: ["chd", "rvz", "gcz", "wbfs", "gcm"],
 		filterName: "Compressed Files",
 		dropLabel: "Drop files to verify integrity",
-		supportedText: ".chd, .rvz, .nsz",
+		supportedText: ".chd, .rvz, .gcz, .wbfs, .gcm",
 	},
 	info: {
 		extensions: [
@@ -88,6 +88,10 @@ interface DiscInfo {
  * Handles adding, removing, and organizing jobs in workflow queues.
  */
 export class ManageQueueUseCase {
+	private static readonly FILE_ANALYSIS_CONCURRENCY = 6;
+	private static readonly DIRECTORY_SCAN_CONCURRENCY = 6;
+	private static readonly PATH_RESOLVE_CONCURRENCY = 12;
+
 	// Regex patterns for disc detection
 	private static readonly DISC_PATTERNS = [
 		/\(Disc\s*(\d+)\)/i,
@@ -114,36 +118,9 @@ export class ManageQueueUseCase {
 		filename: string,
 		size: number,
 	): Promise<void> {
-		const { jobRepository, detectSystem } = this.deps;
-		const config = WORKFLOW_FILE_CONFIGS[workflow];
-
-		// Validate extension
-		const ext = filePath.split(".").pop()?.toLowerCase();
-		if (!ext || !config.extensions.includes(ext)) {
-			console.warn(`File ${filename} not valid for ${workflow} workflow`);
-			return;
-		}
-
-		// Detect system and strategy
-		const system = await detectSystem.execute(filePath);
-		const strategy = this.getStrategy(filePath);
-		const discInfo = this.extractDiscInfo(filename);
-
-		const job: JobProps = {
-			id: uuidv4(),
-			filename,
-			path: filePath,
-			system,
-			status: "pending",
-			progress: 0,
-			originalSize: size,
-			outputLog: [],
-			strategy,
-			discGroup: discInfo?.baseName,
-			discNumber: discInfo?.discNumber,
-		};
-
-		jobRepository.addJob(workflow, job);
+		const job = await this.buildJob(workflow, filePath, filename, size);
+		if (!job) return;
+		this.deps.jobRepository.addJob(workflow, job);
 	}
 
 	/**
@@ -153,20 +130,29 @@ export class ManageQueueUseCase {
 	 * @param paths - Array of file paths
 	 */
 	async addFiles(workflow: WorkflowType, paths: string[]): Promise<void> {
-		const { fileSystem } = this.deps;
+		const { fileSystem, jobRepository } = this.deps;
+		const jobs = await this.mapWithConcurrency(
+			paths,
+			ManageQueueUseCase.FILE_ANALYSIS_CONCURRENCY,
+			async (filePath) => {
+				const name = filePath.split(/[\\/]/).pop() ?? "unknown";
+				let size = 0;
 
-		for (const filePath of paths) {
-			const name = filePath.split(/[\\/]/).pop() ?? "unknown";
-			let size = 0;
+				try {
+					const info = await fileSystem.getFileInfo(filePath);
+					size = info.size;
+				} catch (e) {
+					console.warn(`Failed to stat file ${filePath}, assuming size 0`, e);
+				}
 
-			try {
-				const info = await fileSystem.getFileInfo(filePath);
-				size = info.size;
-			} catch (e) {
-				console.warn(`Failed to stat file ${filePath}, assuming size 0`, e);
+				return this.buildJob(workflow, filePath, name, size);
+			},
+		);
+
+		for (const job of jobs) {
+			if (job) {
+				jobRepository.addJob(workflow, job);
 			}
-
-			await this.addFile(workflow, filePath, name, size);
 		}
 	}
 
@@ -181,7 +167,6 @@ export class ManageQueueUseCase {
 		folderPaths: string[],
 	): Promise<void> {
 		const files = await this.scanFolders(workflow, folderPaths);
-		console.log(`Found ${files.length} valid files for ${workflow}`);
 		await this.addFiles(workflow, files);
 	}
 
@@ -272,32 +257,122 @@ export class ManageQueueUseCase {
 		const { fileSystem } = this.deps;
 		const config = WORKFLOW_FILE_CONFIGS[workflow];
 		const foundFiles: string[] = [];
+		const pendingDirectories = [...folderPaths];
+		const visited = new Set<string>();
 
-		const scanDir = async (path: string): Promise<void> => {
-			try {
-				const entries = await fileSystem.readDirectory(path);
-				for (const entry of entries) {
-					const entryPath = await fileSystem.joinPath(path, entry.name);
+		const worker = async (): Promise<void> => {
+			while (true) {
+				const directory = pendingDirectories.shift();
+				if (!directory) return;
+				if (visited.has(directory)) continue;
+				visited.add(directory);
 
-					if (entry.isDirectory) {
-						await scanDir(entryPath);
-					} else if (entry.isFile) {
-						const ext = entry.name.split(".").pop()?.toLowerCase();
+				try {
+					const entries = await fileSystem.readDirectory(directory);
+					const resolvedEntries = await this.mapWithConcurrency(
+						entries,
+						ManageQueueUseCase.PATH_RESOLVE_CONCURRENCY,
+						async (entry) => {
+							try {
+								return {
+									entry,
+									path: await fileSystem.joinPath(directory, entry.name),
+								};
+							} catch (e) {
+								console.warn(
+									`Failed to resolve entry path ${directory}/${entry.name}`,
+									e,
+								);
+								return null;
+							}
+						},
+					);
+
+					for (const resolved of resolvedEntries) {
+						if (!resolved) continue;
+
+						if (resolved.entry.isDirectory) {
+							pendingDirectories.push(resolved.path);
+							continue;
+						}
+
+						if (!resolved.entry.isFile) continue;
+						const ext = resolved.entry.name.split(".").pop()?.toLowerCase();
 						if (ext && config.extensions.includes(ext)) {
-							foundFiles.push(entryPath);
+							foundFiles.push(resolved.path);
 						}
 					}
+				} catch (e) {
+					console.warn(`Failed to read dir ${directory}`, e);
 				}
-			} catch (e) {
-				console.warn(`Failed to read dir ${path}`, e);
 			}
 		};
 
-		for (const dir of folderPaths) {
-			await scanDir(dir);
-		}
+		const workerCount = Math.min(
+			ManageQueueUseCase.DIRECTORY_SCAN_CONCURRENCY,
+			Math.max(1, pendingDirectories.length),
+		);
+		await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
 		return foundFiles;
+	}
+
+	private async buildJob(
+		workflow: WorkflowType,
+		filePath: string,
+		filename: string,
+		size: number,
+	): Promise<JobProps | null> {
+		const { detectSystem } = this.deps;
+		const config = WORKFLOW_FILE_CONFIGS[workflow];
+
+		const ext = filePath.split(".").pop()?.toLowerCase();
+		if (!ext || !config.extensions.includes(ext)) {
+			console.warn(`File ${filename} not valid for ${workflow} workflow`);
+			return null;
+		}
+
+		const system = await detectSystem.execute(filePath);
+		const strategy = this.getStrategy(filePath);
+		const discInfo = this.extractDiscInfo(filename);
+
+		return {
+			id: uuidv4(),
+			filename,
+			path: filePath,
+			system,
+			status: "pending",
+			progress: 0,
+			originalSize: size,
+			outputLog: [],
+			strategy,
+			discGroup: discInfo?.baseName,
+			discNumber: discInfo?.discNumber,
+		};
+	}
+
+	private async mapWithConcurrency<T, R>(
+		items: readonly T[],
+		limit: number,
+		mapper: (item: T, index: number) => Promise<R>,
+	): Promise<R[]> {
+		if (items.length === 0) return [];
+
+		const concurrency = Math.max(1, Math.min(limit, items.length));
+		const results = new Array<R>(items.length);
+		let nextIndex = 0;
+
+		const worker = async (): Promise<void> => {
+			while (true) {
+				const index = nextIndex;
+				nextIndex += 1;
+				if (index >= items.length) return;
+				results[index] = await mapper(items[index], index);
+			}
+		};
+
+		await Promise.all(Array.from({ length: concurrency }, () => worker()));
+		return results;
 	}
 
 	/**

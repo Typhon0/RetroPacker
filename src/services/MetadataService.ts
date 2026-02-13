@@ -1,7 +1,10 @@
-import { mkdir, exists, readDir } from "@tauri-apps/plugin-fs";
+import { mkdir, exists, readDir, open, SeekMode } from "@tauri-apps/plugin-fs";
 import { BinaryManagerService } from "./BinaryManagerService";
 import { appDataDir, join, dirname } from "@tauri-apps/api/path";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { fetch } from "@tauri-apps/plugin-http";
+import { DetectSystemUseCase } from "@/domain/usecases/DetectSystemUseCase";
+import type { DetectedSystem } from "@/domain/types/platform.types";
 
 class AsyncLimiter {
 	private active = 0;
@@ -37,6 +40,7 @@ class AsyncLimiter {
 type ReadableHandle = {
 	read: (buffer: Uint8Array) => Promise<number | null>;
 	close: () => Promise<void>;
+	seek?: (offset: number, mode: SeekMode) => Promise<number>;
 };
 
 // biome-ignore lint/complexity/noStaticOnlyClass: static utility class is intentional
@@ -52,6 +56,27 @@ export class MetadataService {
 		string,
 		Promise<string | null>
 	>();
+	private static readonly detectSystemUseCase = new DetectSystemUseCase({
+		fileSystem: {
+			readBytes: async (
+				path: string,
+				offset?: number,
+				length?: number,
+			): Promise<Uint8Array> => {
+				const file = (await open(path, { read: true })) as ReadableHandle;
+				try {
+					if (offset !== undefined && offset > 0 && file.seek) {
+						await file.seek(offset, SeekMode.Start);
+					}
+					const buffer = new Uint8Array(length ?? 2048);
+					await file.read(buffer);
+					return buffer;
+				} finally {
+					await file.close();
+				}
+			},
+		},
+	});
 
 	static async initCache(): Promise<string> {
 		if (MetadataService.cacheDir) return MetadataService.cacheDir;
@@ -63,88 +88,19 @@ export class MetadataService {
 		return MetadataService.cacheDir;
 	}
 
-	static async detectSystemAsync(filePath: string): Promise<string> {
-		const ext = filePath.split(".").pop()?.toLowerCase() || "";
-		const lowerPath = filePath.toLowerCase().replace(/\\/g, "/");
+	static async detectSystemAsync(filePath: string): Promise<DetectedSystem> {
+		const detected =
+			await MetadataService.detectSystemUseCase.execute(filePath);
 
-		switch (ext) {
-			case "gdi":
-				return "Dreamcast";
-			case "gcm":
-				return "GameCube";
-			case "wbfs":
-				return "Wii";
-			case "rvz":
-				return lowerPath.includes("wii") ? "Wii" : "GameCube";
-			case "cue":
-			case "bin":
-				return "PS1";
-			case "cso":
-				return "PSP";
-			case "nsp":
-			case "nsz":
-			case "xci":
-				return "Switch";
-		}
-
-		if (ext === "iso" || ext === "chd" || ext === "cso") {
-			let file: ReadableHandle | null = null;
-			try {
-				const { open } = await import("@tauri-apps/plugin-fs");
-				file = (await open(filePath, { read: true })) as ReadableHandle;
-				const buffer = new Uint8Array(32768 + 64);
-				await file.read(buffer);
-
-				if (
-					buffer[0x8000] === 0x50 &&
-					buffer[0x8001] === 0x53 &&
-					buffer[0x8002] === 0x50
-				) {
-					return "PSP";
-				}
-
-				if (
-					buffer[0] === 0x43 &&
-					buffer[1] === 0x49 &&
-					buffer[2] === 0x53 &&
-					buffer[3] === 0x4f
-				) {
-					return "PSP";
-				}
-
-				if (
-					buffer[24] === 0x5d &&
-					buffer[25] === 0x1c &&
-					buffer[26] === 0x9e
-				)
-					return "Wii";
-
-				if (
-					buffer[28] === 0xc2 &&
-					buffer[29] === 0x33 &&
-					buffer[30] === 0x9f
-				)
-					return "GameCube";
-
-				const gameId = new TextDecoder("ascii").decode(buffer.slice(0, 6));
-				if (/^[A-Z0-9]{6}$/.test(gameId)) {
-					if (!gameId.startsWith("SL") && !gameId.startsWith("SC"))
-						return "GameCube";
-				}
-			} catch {
-				// Ignore read errors
-			} finally {
-				if (file) await file.close();
+		// CHD is a container format; use path hints to recover likely platform labels.
+		if (detected === "CHD") {
+			const inferred = MetadataService.detectSystemUseCase.detectSync(filePath);
+			if (inferred !== "Unknown") {
+				return inferred;
 			}
 		}
 
-		if (lowerPath.includes("gamecube")) return "GameCube";
-		if (lowerPath.includes("wii")) return "Wii";
-		if (lowerPath.includes("psp")) return "PSP";
-		if (lowerPath.includes("ps2")) return "PS2";
-		if (lowerPath.includes("psx") || lowerPath.includes("ps1")) return "PS1";
-
-		return ext === "iso" ? "PS2" : "Unknown";
+		return detected;
 	}
 
 	static async extractIdViaTools(
@@ -166,9 +122,7 @@ export class MetadataService {
 		return null;
 	}
 
-	private static async parseChdInfo(
-		filePath: string,
-	): Promise<string | null> {
+	private static async parseChdInfo(filePath: string): Promise<string | null> {
 		try {
 			const stdout = await BinaryManagerService.execute("chdman", [
 				"info",
@@ -236,7 +190,6 @@ export class MetadataService {
 	): Promise<string | null> {
 		let file: ReadableHandle | null = null;
 		try {
-			const { open } = await import("@tauri-apps/plugin-fs");
 			file = (await open(filePath, { read: true })) as ReadableHandle;
 
 			const buffer = new Uint8Array(65536);
@@ -270,7 +223,6 @@ export class MetadataService {
 	): Promise<string | null> {
 		let file: ReadableHandle | null = null;
 		try {
-			const { open } = await import("@tauri-apps/plugin-fs");
 			file = (await open(filePath, { read: true })) as ReadableHandle;
 			const buffer = new Uint8Array(6);
 			await file.read(buffer);
@@ -302,7 +254,6 @@ export class MetadataService {
 			const localCover = await MetadataService.findLocalCover(filePath);
 			if (localCover) {
 				console.log(`[Metadata] Found local cover: ${localCover}`);
-				const { convertFileSrc } = await import("@tauri-apps/api/core");
 				const localUrl = convertFileSrc(localCover);
 				MetadataService.coverCache.set(cacheKey, localUrl);
 				return localUrl;

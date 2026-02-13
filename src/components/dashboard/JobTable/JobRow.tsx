@@ -25,6 +25,7 @@ import {
 	CheckCircle,
 	AlertCircle,
 	Play,
+	Trash2,
 } from "lucide-react";
 import { cn, formatDuration } from "@/lib/utils";
 import type { Job, WorkflowType } from "@/stores/useQueueStore";
@@ -90,6 +91,7 @@ const JobRowComponent = ({
 }: JobRowProps): React.ReactElement => {
 	const isDisabled = !!folderOverride;
 	const displayValue = job.platformOverride || job.system.toLowerCase();
+	const isProcessing = job.status === "processing";
 
 	return (
 		<TableRow
@@ -136,10 +138,10 @@ const JobRowComponent = ({
 								"gamecube",
 								"wii",
 							].includes(job.system.toLowerCase()) && (
-								<SelectItem value={job.system.toLowerCase()}>
-									{job.system}
-								</SelectItem>
-							)}
+									<SelectItem value={job.system.toLowerCase()}>
+										{job.system}
+									</SelectItem>
+								)}
 							<SelectItem value="ps1">PS1</SelectItem>
 							<SelectItem value="ps2">PS2</SelectItem>
 							<SelectItem value="psp">PSP</SelectItem>
@@ -193,13 +195,17 @@ const JobRowComponent = ({
 						variant="ghost"
 						size="icon"
 						className="h-8 w-8 text-muted-foreground hover:text-destructive transition-colors"
-						title={job.status === "processing" ? "Cancel job" : "Remove job"}
+						title={isProcessing ? "Cancel job" : "Remove job"}
 						onClick={(e) => {
 							e.stopPropagation();
 							onRemove(job.id);
 						}}
 					>
-						<XCircle className="h-4 w-4" />
+						{isProcessing ? (
+							<XCircle className="h-4 w-4 text-blue-500 animate-pulse" />
+						) : (
+							<Trash2 className="h-4 w-4" />
+						)}
 					</Button>
 				</div>
 			</TableCell>

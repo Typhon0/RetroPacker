@@ -12,6 +12,10 @@ import { useShallow } from "zustand/react/shallow";
 export function useQueueProcessor(workflow: WorkflowType) {
 	const queue = useQueueStore((state) => state.queues[workflow]);
 	const isProcessing = useQueueStore((state) => state.isProcessing[workflow]);
+	const startRequests = useQueueStore((state) => state.startRequests[workflow]);
+	const consumeStartRequest = useQueueStore(
+		(state) => state.consumeStartRequest,
+	);
 	const concurrency = usePackerStore((state) => state.concurrency);
 	// Use useShallow to avoid creating new object references on every render
 	const settings = usePackerStore(
@@ -32,51 +36,68 @@ export function useQueueProcessor(workflow: WorkflowType) {
 			const processingCount = queue.filter(
 				(j: Job) => j.status === "processing",
 			).length;
-			const nextJob = queue.find((j: Job) => j.status === "pending");
-
-			// Debug Heartbeat - commented out to reduce overhead
-			// if (isProcessing && (processingCount < concurrency || nextJob)) {
-			// 	console.log(
-			// 		`[QueueProcessor:${workflow}] Heartbeat - Processing: ${isProcessing}, Active: ${processingCount}, Pending: ${queue.length}, Next: ${nextJob?.filename}`,
-			// 	);
-			// }
-
-			// DEBUG: Log processing state
-			console.log(
-				`[QueueProcessor:${workflow}] Effect triggered - isProcessing: ${isProcessing}, queueLength: ${queue.length}, processingCount: ${processingCount}`,
-			);
-
-			if (isProcessing && processingCount < concurrency) {
-				if (nextJob) {
-					try {
-						const outputDir = await repositories.fileSystem.dirname(
-							nextJob.path,
-						);
-
-						// Instantiate Use Case with dependencies
-						const processJobUseCase = new ProcessJobUseCase(repositories);
-
-						// Execute Job
-						// Note: floating promise is intentional here as we don't await completion to allow concurrency
-						processJobUseCase
-							.execute(nextJob, outputDir, workflow, settings)
-							.catch((err) => {
-								console.error(
-									`[QueueProcessor] Job execution failed unhandled:`,
-									err,
-								);
-							});
-					} catch (e) {
-						console.error("Failed to start job", e);
-						useQueueStore.getState().updateJob(workflow, nextJob.id, {
-							status: "failed",
-							errorMessage: "Could not determine output path or start job",
-						});
-					}
+			let nextRequestedJob: Job | undefined;
+			for (const requestedId of startRequests) {
+				const candidate = queue.find((j: Job) => j.id === requestedId);
+				if (candidate?.status === "pending") {
+					nextRequestedJob = candidate;
+					break;
 				}
+				consumeStartRequest(workflow, requestedId);
+			}
+
+			const nextQueuedJob = isProcessing
+				? queue.find((j: Job) => j.status === "pending")
+				: undefined;
+			const nextJob = nextRequestedJob ?? nextQueuedJob;
+
+			const canDispatch =
+				processingCount < concurrency &&
+				(isProcessing || startRequests.length > 0) &&
+				!!nextJob;
+
+			if (!canDispatch || !nextJob) {
+				return;
+			}
+
+			if (nextRequestedJob) {
+				consumeStartRequest(workflow, nextRequestedJob.id);
+			}
+
+			try {
+				const outputDir = await repositories.fileSystem.dirname(nextJob.path);
+
+				// Instantiate Use Case with dependencies
+				const processJobUseCase = new ProcessJobUseCase(repositories);
+
+				// Execute Job
+				// Note: floating promise is intentional here as we don't await completion to allow concurrency
+				processJobUseCase
+					.execute(nextJob, outputDir, workflow, settings)
+					.catch((err) => {
+						console.error(
+							`[QueueProcessor] Job execution failed unhandled:`,
+							err,
+						);
+					});
+			} catch (e) {
+				console.error("Failed to start job", e);
+				useQueueStore.getState().updateJob(workflow, nextJob.id, {
+					status: "failed",
+					errorMessage: "Could not determine output path or start job",
+				});
 			}
 		};
 
 		processQueue();
-	}, [queue, concurrency, isProcessing, workflow, settings, repositories]);
+	}, [
+		queue,
+		startRequests,
+		consumeStartRequest,
+		concurrency,
+		isProcessing,
+		workflow,
+		settings,
+		repositories,
+	]);
 }

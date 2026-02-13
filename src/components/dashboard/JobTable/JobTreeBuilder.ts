@@ -139,3 +139,14 @@ export function findNode(node: TreeNode, targetPath: string): TreeNode | null {
 	}
 	return null;
 }
+
+/**
+ * Check if a folder (or any subfolder) has processing jobs.
+ */
+export function isFolderProcessing(node: TreeNode): boolean {
+	if (node.jobs.some((j) => j.status === "processing")) return true;
+	for (const child of Object.values(node.children)) {
+		if (isFolderProcessing(child)) return true;
+	}
+	return false;
+}

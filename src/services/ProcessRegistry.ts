@@ -73,13 +73,18 @@ export async function cancel(
 	jobId: string,
 ): Promise<boolean> {
 	const key = getKey(workflow, jobId);
-	const process = processes.get(key);
 
+	// Latch cancellation immediately to cover the race where a job is already
+	// starting but not yet registered in the process map.
+	cancelledJobs.add(key);
+
+	const process = processes.get(key);
 	if (!process) {
-		return false;
+		// Cancellation is still considered successful because any later register()
+		// call for this key will observe the latch and terminate immediately.
+		return true;
 	}
 
-	cancelledJobs.add(key);
 	processes.delete(key); // Remove immediately to update UI
 
 	// Fire-and-forget termination

@@ -17,6 +17,8 @@ export type Job = {
 		: JobProps[K];
 };
 
+const MAX_LOG_LINES_PER_JOB = 2000;
+
 // Empty queue template
 const createEmptyQueues = (): Record<WorkflowType, Job[]> => ({
 	compress: [],
@@ -32,9 +34,17 @@ const createEmptyProcessing = (): Record<WorkflowType, boolean> => ({
 	info: false,
 });
 
+const createEmptyStartRequests = (): Record<WorkflowType, string[]> => ({
+	compress: [],
+	extract: [],
+	verify: [],
+	info: [],
+});
+
 interface QueueState {
 	queues: Record<WorkflowType, Job[]>;
 	isProcessing: Record<WorkflowType, boolean>;
+	startRequests: Record<WorkflowType, string[]>;
 
 	// Actions
 	addJob: (workflow: WorkflowType, job: Job) => void;
@@ -47,6 +57,8 @@ interface QueueState {
 	clearQueue: (workflow: WorkflowType) => void;
 	appendLog: (workflow: WorkflowType, id: string, line: string) => void;
 	setProcessing: (workflow: WorkflowType, isProcessing: boolean) => void;
+	requestStart: (workflow: WorkflowType, id: string) => void;
+	consumeStartRequest: (workflow: WorkflowType, id: string) => void;
 
 	// Helpers
 	getQueue: (workflow: WorkflowType) => Job[];
@@ -57,6 +69,7 @@ export const useQueueStore = create<QueueState>()(
 	immer((set, get) => ({
 		queues: createEmptyQueues(),
 		isProcessing: createEmptyProcessing(),
+		startRequests: createEmptyStartRequests(),
 
 		addJob: (workflow, job) =>
 			set((state) => {
@@ -70,6 +83,9 @@ export const useQueueStore = create<QueueState>()(
 				if (idx !== -1) {
 					queue.splice(idx, 1);
 				}
+				state.startRequests[workflow] = state.startRequests[workflow].filter(
+					(requestedId) => requestedId !== id,
+				);
 			}),
 
 		updateJob: (workflow, id, updates) =>
@@ -84,6 +100,7 @@ export const useQueueStore = create<QueueState>()(
 			set((state) => {
 				state.queues[workflow] = [];
 				state.isProcessing[workflow] = false;
+				state.startRequests[workflow] = [];
 			}),
 
 		appendLog: (workflow, id, line) =>
@@ -91,12 +108,31 @@ export const useQueueStore = create<QueueState>()(
 				const job = state.queues[workflow].find((j) => j.id === id);
 				if (job) {
 					job.outputLog.push(line);
+					const overflow = job.outputLog.length - MAX_LOG_LINES_PER_JOB;
+					if (overflow > 0) {
+						job.outputLog.splice(0, overflow);
+					}
 				}
 			}),
 
 		setProcessing: (workflow, isProcessing) =>
 			set((state) => {
 				state.isProcessing[workflow] = isProcessing;
+			}),
+
+		requestStart: (workflow, id) =>
+			set((state) => {
+				if (!state.startRequests[workflow].includes(id)) {
+					state.startRequests[workflow].push(id);
+				}
+			}),
+
+		consumeStartRequest: (workflow, id) =>
+			set((state) => {
+				const idx = state.startRequests[workflow].indexOf(id);
+				if (idx !== -1) {
+					state.startRequests[workflow].splice(idx, 1);
+				}
 			}),
 
 		getQueue: (workflow) => get().queues[workflow],

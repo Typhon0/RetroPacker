@@ -47,7 +47,7 @@ export class MockCommandExecutor implements ICommandExecutor {
 
 				await new Promise((resolve) => setTimeout(resolve, 100));
 
-				callbacks.onProgress?.(progress);
+
 
 				if (progress % 20 === 0) {
 					callbacks.onStdout?.(`[MOCK] Processing... ${progress}% complete`);

@@ -17,10 +17,21 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { ChevronRight, ChevronDown, Folder, Play } from "lucide-react";
+import {
+	ChevronRight,
+	ChevronDown,
+	Folder,
+	Play,
+	XCircle,
+	Trash2,
+} from "lucide-react";
 import type { Job } from "@/stores/useQueueStore";
 import type { TreeNode } from "./JobTreeBuilder";
-import { countItems, countPending } from "./JobTreeBuilder";
+import {
+	countItems,
+	countPending,
+	isFolderProcessing,
+} from "./JobTreeBuilder";
 
 interface FolderRowProps {
 	node: TreeNode;
@@ -31,6 +42,7 @@ interface FolderRowProps {
 	onToggle: () => void;
 	onStartFolder: () => void;
 	onSetPlatform: (platform: Job["platformOverride"]) => void;
+	onRemove: () => void;
 }
 
 /**
@@ -45,9 +57,11 @@ export function FolderRow({
 	onToggle,
 	onStartFolder,
 	onSetPlatform,
+	onRemove,
 }: FolderRowProps): React.ReactElement {
 	const totalItems = countItems(node);
 	const pendingInFolder = countPending(node);
+	const isProcessing = isFolderProcessing(node);
 	const currentValue = folderOverride || inferredPlatform || "auto";
 
 	return (
@@ -104,12 +118,12 @@ export function FolderRow({
 				)}
 			</TableCell>
 			<TableCell className="text-right py-2">
-				<div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+				<div className="flex justify-end gap-1">
 					{pendingInFolder > 0 && (
 						<Button
 							variant="ghost"
 							size="icon"
-							className="h-7 w-7 text-green-500"
+							className="h-7 w-7 text-green-500 opacity-0 group-hover:opacity-100 transition-opacity"
 							title="Start all jobs in folder"
 							onClick={(e) => {
 								e.stopPropagation();
@@ -119,6 +133,22 @@ export function FolderRow({
 							<Play className="h-3.5 w-3.5" />
 						</Button>
 					)}
+					<Button
+						variant="ghost"
+						size="icon"
+						className="h-7 w-7 text-muted-foreground hover:text-destructive transition-colors"
+						title={isProcessing ? "Cancel folder processing" : "Remove folder"}
+						onClick={(e) => {
+							e.stopPropagation();
+							onRemove();
+						}}
+					>
+						{isProcessing ? (
+							<XCircle className="h-3.5 w-3.5 text-blue-500 animate-pulse" />
+						) : (
+							<Trash2 className="h-3.5 w-3.5" />
+						)}
+					</Button>
 				</div>
 			</TableCell>
 		</TableRow>

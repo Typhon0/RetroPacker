@@ -14,7 +14,7 @@ import { IFileSystemRepository } from "../repositories/IFileSystemRepository";
  * Dependencies for DetectSystemUseCase.
  */
 export interface DetectSystemDependencies {
-	readonly fileSystem: IFileSystemRepository;
+	readonly fileSystem: Pick<IFileSystemRepository, "readBytes">;
 }
 
 /**
@@ -108,6 +108,9 @@ export class DetectSystemUseCase {
 		switch (ext) {
 			case "chd":
 				return "CHD";
+			case "cso":
+			case "ciso":
+				return "PSP";
 			case "gdi":
 				return "Dreamcast";
 			case "gcm":
@@ -178,19 +181,14 @@ export class DetectSystemUseCase {
 			// Get potential game ID (first 6 bytes) - offset 0
 			const gameId = new TextDecoder("ascii").decode(buffer.slice(0, 6));
 
-			console.log(
-				`[DetectSystemUseCase] Checking ISO header for ${filename}: GameID="${gameId}"`,
-			);
-
 			// PSP Magic: "PSP GAME" at offset 0x8000 (32768)
 			// Checking just "PSP" at 0x8000 for efficiency
-			const pspMagic = 
+			const pspMagic =
 				buffer[0x8000] === 0x50 && // 'P'
 				buffer[0x8001] === 0x53 && // 'S'
-				buffer[0x8002] === 0x50;   // 'P'
+				buffer[0x8002] === 0x50; // 'P'
 
 			if (pspMagic) {
-				console.log("[DetectSystemUseCase] Detected PSP via Magic Bytes");
 				return "PSP";
 			}
 
@@ -209,20 +207,15 @@ export class DetectSystemUseCase {
 				buffer[27] === 0xa3;
 
 			if (magicWii) {
-				console.log("[DetectSystemUseCase] Detected Wii via Magic Bytes");
 				return "Wii";
 			}
 
 			if (magicGC) {
-				console.log("[DetectSystemUseCase] Detected GameCube via Magic Bytes");
 				return "GameCube";
 			}
 
 			// Valid alphanumeric 6-char ID at offset 0 suggests Nintendo
 			if (/^[A-Z0-9]{6}$/.test(gameId)) {
-				console.log(
-					`[DetectSystemUseCase] Detected Nintendo via Game ID: ${gameId}`,
-				);
 				return "GameCube";
 			}
 		} catch (e) {

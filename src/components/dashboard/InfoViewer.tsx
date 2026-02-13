@@ -14,6 +14,9 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MetadataService } from "@/services/MetadataService";
+import { BinaryManagerService } from "@/services/BinaryManagerService";
+import { stat, open as openFile } from "@tauri-apps/plugin-fs";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 interface GameInfo {
 	filename: string;
@@ -131,218 +134,213 @@ export function InfoViewer() {
 	const [isDragging, setIsDragging] = useState(false);
 	const [showRaw, setShowRaw] = useState(false);
 
-	const processFilePath = useCallback(async (
-		filePath: string,
-		fileName?: string,
-		fileSize?: number,
-	) => {
-		setIsLoading(true);
-		setIsCoverLoading(false); // Reset cover loading state
-		setError(undefined);
-		setShowRaw(false); // Reset raw view toggle
+	const processFilePath = useCallback(
+		async (filePath: string, fileName?: string, fileSize?: number) => {
+			setIsLoading(true);
+			setIsCoverLoading(false); // Reset cover loading state
+			setError(undefined);
+			setShowRaw(false); // Reset raw view toggle
 
-		try {
-			// Get file name and size if not provided
-			const name = fileName || filePath.split(/[\\\/]/).pop() || "unknown";
-			let size = fileSize || 0;
-
-			if (!fileSize) {
-				try {
-					const { stat } = await import("@tauri-apps/plugin-fs");
-					const fileStat = await stat(filePath);
-					size = fileStat.size;
-				} catch (e) {
-					console.warn(`Failed to stat file ${filePath}`, e);
-				}
-			}
-
-			// Determine format and system
-			const extension = filePath.toLowerCase().split(".").pop();
-			const format = extension?.toUpperCase() || "Unknown";
-			const system = await MetadataService.detectSystemAsync(filePath);
-
-			// Initialize info object
-			let gameId: string | null = null;
-			let rawOutput: string | undefined;
-			let chdStats: ChdStats | undefined;
-			let dolphinStats: DolphinStats | undefined;
-
-			// Extract game ID using the unified API
 			try {
-				gameId = await MetadataService.extractGameId(filePath, system);
-			} catch (e) {
-				console.error("Failed to extract game ID:", e);
-			}
+				// Get file name and size if not provided
+				const name = fileName || filePath.split(/[\\\/]/).pop() || "unknown";
+				let size = fileSize || 0;
 
-			if (extension === "chd") {
-				try {
-					const { BinaryManagerService } = await import(
-						"@/services/BinaryManagerService"
-					);
-					const command = BinaryManagerService.createCommand("chdman", [
-						"info",
-						"-i",
-						filePath,
-					]);
-					const output = await command.execute();
-					if (output.code === 0) {
-						rawOutput = output.stdout;
-						chdStats = parseChdOutput(rawOutput);
-					} else {
-						console.warn("chdman info failed:", output.stderr);
+				if (!fileSize) {
+					try {
+						const fileStat = await stat(filePath);
+						size = fileStat.size;
+					} catch (e) {
+						console.warn(`Failed to stat file ${filePath}`, e);
 					}
-				} catch (e) {
-					console.error("Failed to get CHD info:", e);
 				}
-			} else if (extension === "cso") {
-				// CSO Header Reader
-				try {
-					const { open } = await import("@tauri-apps/plugin-fs");
-					const file = await open(filePath, { read: true });
-					const buffer = new Uint8Array(24); // CSO header is 24 bytes
-					await file.read(buffer);
-					await file.close();
 
-					// Parse CSO Header
-					// u32 magic (CISO)
-					// u32 header_size
-					// u64 total_bytes
-					// u32 block_size
-					// u8 version
-					// u8 align
-					// u16 reserved
-					const view = new DataView(buffer.buffer);
-					if (view.getUint32(0, true) === 0x4f534943) { // CISO little endian? File usually little endian.
-                         // Magic is "CISO" = 0x43 0x49 0x53 0x4F. 
-                         // Little Endian read: 0x4F534943
-						const headerSize = view.getUint32(4, true);
-						const totalBytes = view.getBigUint64(8, true);
-						const blockSize = view.getUint32(16, true);
-						const ver = view.getUint8(20);
-						
-						rawOutput = `CSO Header:\n`;
-						rawOutput += `Magic: CISO\n`;
-						rawOutput += `Header Size: ${headerSize} bytes\n`;
-						rawOutput += `Uncompressed Size: ${totalBytes} bytes\n`;
-						rawOutput += `Block Size: ${blockSize} bytes\n`;
-						rawOutput += `Version: ${ver}\n`;
-						
-						// Estimate compression ratio
-						const ratio = (size / Number(totalBytes)) * 100;
-						chdStats = {
-							logicalSize: `${totalBytes} bytes`,
-							chdSize: `${size} bytes`,
-							ratio: `${ratio.toFixed(1)}%`,
-							compression: "Deflate (CSO)",
-						};
-					}
-				} catch (e) {
-					console.error("Failed to read CSO header", e);
-				}
-			} else if (
-				["rvz", "wbfs", "gcz", "gcm"].includes(extension || "") ||
-				(extension === "iso" && (system === "GameCube" || system === "Wii"))
-			) {
+				// Determine format and system
+				const extension = filePath.toLowerCase().split(".").pop();
+				const format = extension?.toUpperCase() || "Unknown";
+				const system = await MetadataService.detectSystemAsync(filePath);
+
+				// Initialize info object
+				let gameId: string | null = null;
+				let rawOutput: string | undefined;
+				let chdStats: ChdStats | undefined;
+				let dolphinStats: DolphinStats | undefined;
+
+				// Extract game ID using the unified API
 				try {
-					const { BinaryManagerService } = await import(
-						"@/services/BinaryManagerService"
-					);
-					const command = BinaryManagerService.createCommand("dolphintool", [
-						"header",
-						"-i",
-						filePath,
-					]);
-					const output = await command.execute();
-					if (output.code === 0) {
-						rawOutput = output.stdout;
-						dolphinStats = parseDolphinOutput(rawOutput);
-						// Update gameId if found in stats and not already set
-						if (dolphinStats.gameId && !gameId) {
-							gameId = dolphinStats.gameId;
+					gameId = await MetadataService.extractGameId(filePath, system);
+				} catch (e) {
+					console.error("Failed to extract game ID:", e);
+				}
+
+				if (extension === "chd") {
+					try {
+						const command = BinaryManagerService.createCommand("chdman", [
+							"info",
+							"-i",
+							filePath,
+						]);
+						const output = await command.execute();
+						if (output.code === 0) {
+							rawOutput = output.stdout;
+							chdStats = parseChdOutput(rawOutput);
+						} else {
+							console.warn("chdman info failed:", output.stderr);
 						}
-					} else {
-						console.warn("DolphinTool header failed:", output.stderr);
+					} catch (e) {
+						console.error("Failed to get CHD info:", e);
+					}
+				} else if (extension === "cso") {
+					// CSO Header Reader
+					try {
+						const file = await openFile(filePath, { read: true });
+						const buffer = new Uint8Array(24); // CSO header is 24 bytes
+						await file.read(buffer);
+						await file.close();
+
+						// Parse CSO Header
+						// u32 magic (CISO)
+						// u32 header_size
+						// u64 total_bytes
+						// u32 block_size
+						// u8 version
+						// u8 align
+						// u16 reserved
+						const view = new DataView(buffer.buffer);
+						if (view.getUint32(0, true) === 0x4f534943) {
+							// CISO little endian? File usually little endian.
+							// Magic is "CISO" = 0x43 0x49 0x53 0x4F.
+							// Little Endian read: 0x4F534943
+							const headerSize = view.getUint32(4, true);
+							const totalBytes = view.getBigUint64(8, true);
+							const blockSize = view.getUint32(16, true);
+							const ver = view.getUint8(20);
+
+							rawOutput = `CSO Header:\n`;
+							rawOutput += `Magic: CISO\n`;
+							rawOutput += `Header Size: ${headerSize} bytes\n`;
+							rawOutput += `Uncompressed Size: ${totalBytes} bytes\n`;
+							rawOutput += `Block Size: ${blockSize} bytes\n`;
+							rawOutput += `Version: ${ver}\n`;
+
+							// Estimate compression ratio
+							const ratio = (size / Number(totalBytes)) * 100;
+							chdStats = {
+								logicalSize: `${totalBytes} bytes`,
+								chdSize: `${size} bytes`,
+								ratio: `${ratio.toFixed(1)}%`,
+								compression: "Deflate (CSO)",
+							};
+						}
+					} catch (e) {
+						console.error("Failed to read CSO header", e);
+					}
+				} else if (
+					["rvz", "wbfs", "gcz", "gcm"].includes(extension || "") ||
+					(extension === "iso" && (system === "GameCube" || system === "Wii"))
+				) {
+					try {
+						const command = BinaryManagerService.createCommand("dolphintool", [
+							"header",
+							"-i",
+							filePath,
+						]);
+						const output = await command.execute();
+						if (output.code === 0) {
+							rawOutput = output.stdout;
+							dolphinStats = parseDolphinOutput(rawOutput);
+							// Update gameId if found in stats and not already set
+							if (dolphinStats.gameId && !gameId) {
+								gameId = dolphinStats.gameId;
+							}
+						} else {
+							console.warn("DolphinTool header failed:", output.stderr);
+						}
+					} catch (e) {
+						console.error("Failed to get Dolphin info:", e);
+					}
+				}
+
+				// 3. Fallback: Filename Regex (Essential for CHDs and files where extraction failed)
+				if (!gameId) {
+					gameId = extractGameIdFromFilename(name);
+					if (gameId) {
+						console.log(`Extracted Game ID from filename: ${gameId}`);
+					}
+				}
+
+				// Render Initial Metadata (Without Cover) - Immediate Feedback
+				setGameInfo({
+					filename: name,
+					path: filePath,
+					format,
+					size,
+					system,
+					gameId,
+					coverPath: undefined,
+					rawOutput,
+					chdStats,
+					dolphinStats,
+				});
+				setIsLoading(false); // Stop loading spinner so user sees data
+
+				// Fetch Cover using the "Unfailable" pipeline (Background)
+				console.log(`Fetching cover for ${name} (${system})`);
+				setIsCoverLoading(true); // Start cover spinner
+				try {
+					const coverUrl = await MetadataService.fetchCover(
+						gameId,
+						system,
+						filePath,
+					);
+					if (coverUrl) {
+						setGameInfo((prev) => {
+							// Guard against stale updates if user switched files
+							if (!prev || prev.path !== filePath) return prev;
+							return { ...prev, coverPath: coverUrl };
+						});
 					}
 				} catch (e) {
-					console.error("Failed to get Dolphin info:", e);
-				}
-			}
-
-			// 3. Fallback: Filename Regex (Essential for CHDs and files where extraction failed)
-			if (!gameId) {
-				gameId = extractGameIdFromFilename(name);
-				if (gameId) {
-					console.log(`Extracted Game ID from filename: ${gameId}`);
-				}
-			}
-
-			// Render Initial Metadata (Without Cover) - Immediate Feedback
-			setGameInfo({
-				filename: name,
-				path: filePath,
-				format,
-				size,
-				system,
-				gameId,
-				coverPath: undefined,
-				rawOutput,
-				chdStats,
-				dolphinStats,
-			});
-			setIsLoading(false); // Stop loading spinner so user sees data
-
-			// Fetch Cover using the "Unfailable" pipeline (Background)
-			console.log(`Fetching cover for ${name} (${system})`);
-			setIsCoverLoading(true); // Start cover spinner
-			try {
-				const coverUrl = await MetadataService.fetchCover(
-					gameId,
-					system,
-					filePath,
-				);
-				if (coverUrl) {
-					setGameInfo((prev) => {
-						// Guard against stale updates if user switched files
-						if (!prev || prev.path !== filePath) return prev;
-						return { ...prev, coverPath: coverUrl };
-					});
+					console.warn("Cover fetch failed silently:", e);
+				} finally {
+					setIsCoverLoading(false); // Stop cover spinner
 				}
 			} catch (e) {
-				console.warn("Cover fetch failed silently:", e);
+				setError(e instanceof Error ? e.message : "Failed to read file info");
+				setIsLoading(false);
+				setIsCoverLoading(false);
 			} finally {
-				setIsCoverLoading(false); // Stop cover spinner
+				// Ensure loading is off if we crashed early,
+				// but don't toggle it if we already turned it off manually.
+				// Actually, safe to just ensure it's false here.
+				setIsLoading(false);
 			}
-		} catch (e) {
-			setError(e instanceof Error ? e.message : "Failed to read file info");
-			setIsLoading(false);
-			setIsCoverLoading(false);
-		} finally {
-			// Ensure loading is off if we crashed early, 
-			// but don't toggle it if we already turned it off manually.
-            // Actually, safe to just ensure it's false here.
-			setIsLoading(false);
-		}
-	}, []);
+		},
+		[],
+	);
 
-	const processFile = useCallback(async (file: File) => {
-		// @ts-ignore - file.path exists in Tauri
-		let filePath = file.path;
+	const processFile = useCallback(
+		async (file: File) => {
+			// @ts-ignore - file.path exists in Tauri
+			let filePath = file.path;
 
-		if (!filePath) {
-			// @ts-ignore
-			const isTauri =
-				typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-			if (!isTauri) {
-				console.log("[MOCK] Browser detected");
-				filePath = `/mock/${file.name}`;
-			} else {
-				setError("Could not get file path");
-				return;
+			if (!filePath) {
+				// @ts-ignore
+				const isTauri =
+					typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+				if (!isTauri) {
+					console.log("[MOCK] Browser detected");
+					filePath = `/mock/${file.name}`;
+				} else {
+					setError("Could not get file path");
+					return;
+				}
 			}
-		}
 
-		await processFilePath(filePath, file.name, file.size);
-	}, [processFilePath]);
+			await processFilePath(filePath, file.name, file.size);
+		},
+		[processFilePath],
+	);
 
 	const handleDragOver = useCallback((e: React.DragEvent) => {
 		e.preventDefault();
@@ -354,20 +352,22 @@ export function InfoViewer() {
 		setIsDragging(false);
 	}, []);
 
-	const handleDrop = useCallback(async (e: React.DragEvent) => {
-		e.preventDefault();
-		setIsDragging(false);
+	const handleDrop = useCallback(
+		async (e: React.DragEvent) => {
+			e.preventDefault();
+			setIsDragging(false);
 
-		const files = Array.from(e.dataTransfer.files);
-		if (files.length > 0) {
-			await processFile(files[0]);
-		}
-	}, [processFile]);
+			const files = Array.from(e.dataTransfer.files);
+			if (files.length > 0) {
+				await processFile(files[0]);
+			}
+		},
+		[processFile],
+	);
 
 	const handleClick = useCallback(async () => {
 		try {
-			const { open } = await import("@tauri-apps/plugin-dialog");
-			const selected = await open({
+			const selected = await openDialog({
 				multiple: false,
 				filters: [
 					{
@@ -493,7 +493,9 @@ export function InfoViewer() {
 											{isCoverLoading ? (
 												<>
 													<Loader2 className="h-8 w-8 animate-spin text-primary opacity-50 mb-2" />
-													<p className="text-[10px] font-medium opacity-70">Fetching Cover...</p>
+													<p className="text-[10px] font-medium opacity-70">
+														Fetching Cover...
+													</p>
 												</>
 											) : (
 												<>

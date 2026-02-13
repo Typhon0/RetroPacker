@@ -40,8 +40,7 @@ export interface CommandCallbacks {
 	onStdout?: (line: string) => void;
 	/** Called when a line is written to stderr. */
 	onStderr?: (line: string) => void;
-	/** Called when progress is detected (0-100). */
-	onProgress?: (percent: number) => void;
+
 	/** Called when the command completes. */
 	onClose?: (result: CommandResult) => void;
 	/** Called when an error occurs. */

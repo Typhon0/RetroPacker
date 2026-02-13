@@ -73,6 +73,7 @@ export class ProcessJobUseCase {
 		settings: ProcessJobSettings,
 	): Promise<void> {
 		const lockKey = `${workflow}:${job.id}`;
+		const ext = job.path.split(".").pop()?.toLowerCase() ?? "";
 
 		// Check if workflow is being cancelled - bail out early
 		if (ProcessRegistry.isWorkflowCancelled(workflow)) {
@@ -103,6 +104,7 @@ export class ProcessJobUseCase {
 
 		// Determine which tool to use
 		const usesDolphin = this.shouldUseDolphin(job);
+		this.validateWorkflowSupport(workflow, ext, usesDolphin);
 		const binary = usesDolphin ? "DolphinTool" : "chdman";
 
 		// Build command arguments
@@ -169,12 +171,20 @@ export class ProcessJobUseCase {
 						(workflow === "compress" || workflow === "extract")
 					) {
 						try {
-							await this.deps.fileSystem.moveToTrash(job.path);
-							jobRepository.appendLog(
-								workflow,
-								job.id,
-								`Source file moved to recycle bin: ${job.filename}`,
-							);
+							const moved = await this.deps.fileSystem.moveToTrash(job.path);
+							if (moved) {
+								jobRepository.appendLog(
+									workflow,
+									job.id,
+									`Source file moved to recycle bin: ${job.filename}`,
+								);
+							} else {
+								jobRepository.appendLog(
+									workflow,
+									job.id,
+									`Warning: Failed to move source file to recycle bin: ${job.filename}`,
+								);
+							}
 						} catch (err) {
 							const msg = err instanceof Error ? err.message : String(err);
 							jobRepository.appendLog(
@@ -296,13 +306,15 @@ export class ProcessJobUseCase {
 	): Promise<string[]> {
 		const { fileSystem } = this.deps;
 		const { preset, customCompression, chd } = settings;
+		const outputBaseName = this.getOutputBaseName(job.filename);
+		const sourceExt = job.path.split(".").pop()?.toLowerCase() ?? "";
 
 		let args: string[] = [];
 
 		if (workflow === "compress") {
 			const outputPath = await fileSystem.joinPath(
 				outputDir,
-				`${job.filename}.chd`,
+				`${outputBaseName}.chd`,
 			);
 			args = [job.strategy, "-i", job.path, "-o", outputPath];
 
@@ -316,10 +328,7 @@ export class ProcessJobUseCase {
 			// Hunk size
 			if (chd.hunkSize) {
 				args.push("-hs", chd.hunkSize.toString());
-			} else if (
-				job.system === "PS2" ||
-				job.filename.toLowerCase().endsWith(".iso")
-			) {
+			} else if (job.system === "PS2" || sourceExt === "iso") {
 				args.push("-hs", "2048");
 			}
 
@@ -331,17 +340,17 @@ export class ProcessJobUseCase {
 			if (extractStrategy === "extractdvd") {
 				const outputPath = await fileSystem.joinPath(
 					outputDir,
-					`${job.filename}.iso`,
+					`${outputBaseName}.iso`,
 				);
 				args = [extractStrategy, "-i", job.path, "-o", outputPath, "-f"];
 			} else {
 				const outputCue = await fileSystem.joinPath(
 					outputDir,
-					`${job.filename}.cue`,
+					`${outputBaseName}.cue`,
 				);
 				const outputBin = await fileSystem.joinPath(
 					outputDir,
-					`${job.filename}.bin`,
+					`${outputBaseName}.bin`,
 				);
 				args = [
 					"extractcd",
@@ -375,6 +384,7 @@ export class ProcessJobUseCase {
 		const { fileSystem } = this.deps;
 		const { preset, dolphin } = settings;
 		const level = getCompressionLevel(preset);
+		const outputBaseName = this.getOutputBaseName(job.filename);
 
 		// User dir for temp files
 		const userDir = await fileSystem.joinPath(outputDir, ".retropacker_temp");
@@ -389,10 +399,9 @@ export class ProcessJobUseCase {
 					: dolphin.format === "gcz"
 						? "gcz"
 						: "rvz";
-			const baseName = job.filename.replace(/\.(iso|gcm|wbfs)$/i, "");
 			const outputPath = await fileSystem.joinPath(
 				outputDir,
-				`${baseName}.${ext}`,
+				`${outputBaseName}.${ext}`,
 			);
 
 			args = [
@@ -415,10 +424,9 @@ export class ProcessJobUseCase {
 				args.push("-c", dolphin.compressionAlgorithm, "-l", level.toString());
 			}
 		} else if (workflow === "extract") {
-			const baseName = job.filename.replace(/\.rvz$/i, "");
 			const outputPath = await fileSystem.joinPath(
 				outputDir,
-				`${baseName}.iso`,
+				`${outputBaseName}.iso`,
 			);
 			args = [
 				...baseArgs("convert"),
@@ -442,6 +450,50 @@ export class ProcessJobUseCase {
 		}
 
 		return args;
+	}
+
+	/**
+	 * Normalize output base name by stripping only the final extension.
+	 * Examples:
+	 *  - game.iso -> game
+	 *  - game.chd -> game
+	 *  - game -> game
+	 */
+	private getOutputBaseName(filename: string): string {
+		const lastDot = filename.lastIndexOf(".");
+		if (lastDot <= 0) {
+			return filename;
+		}
+		return filename.slice(0, lastDot);
+	}
+
+	/**
+	 * Validate that a workflow is supported for the given file format/tool routing.
+	 */
+	private validateWorkflowSupport(
+		workflow: WorkflowType,
+		ext: string,
+		usesDolphin: boolean,
+	): void {
+		if (workflow === "extract") {
+			const supported = usesDolphin
+				? ["rvz", "gcz", "wbfs", "wia"]
+				: ["chd"];
+			if (!supported.includes(ext)) {
+				throw new Error(
+					`Unsupported extract input format: .${ext || "unknown"}`,
+				);
+			}
+		}
+
+		if (workflow === "verify") {
+			const supported = usesDolphin
+				? ["rvz", "gcz", "wbfs", "gcm"]
+				: ["chd"];
+			if (!supported.includes(ext)) {
+				throw new Error(`Unsupported verify input format: .${ext || "unknown"}`);
+			}
+		}
 	}
 
 	/**

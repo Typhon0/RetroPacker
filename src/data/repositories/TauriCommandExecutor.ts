@@ -34,14 +34,6 @@ export class TauriCommandExecutor implements ICommandExecutor {
 			const lines = data.split(/[\r\n]+/).filter((line) => line.trim());
 			for (const line of lines) {
 				callbacks.onStdout?.(line.trim());
-
-				// Parse progress if callback provided
-				if (callbacks.onProgress) {
-					const progress = this.parseProgress(line);
-					if (progress !== null) {
-						callbacks.onProgress(progress);
-					}
-				}
 			}
 		});
 
@@ -50,14 +42,6 @@ export class TauriCommandExecutor implements ICommandExecutor {
 			const lines = data.split(/[\r\n]+/).filter((line) => line.trim());
 			for (const line of lines) {
 				callbacks.onStderr?.(line.trim());
-
-				// chdman outputs progress to stderr sometimes
-				if (callbacks.onProgress) {
-					const progress = this.parseProgress(line);
-					if (progress !== null) {
-						callbacks.onProgress(progress);
-					}
-				}
 			}
 		});
 
@@ -101,17 +85,5 @@ export class TauriCommandExecutor implements ICommandExecutor {
 		};
 	}
 
-	/**
-	 * Parse progress percentage from output line.
-	 */
-	private parseProgress(line: string): number | null {
-		// chdman format: "Compressing, 50.5% complete..."
-		const match = line.match(
-			/(?:Compressing|Extracting|Processing|Verifying),?\s+(\d+\.?\d*)%\s+complete/i,
-		);
-		if (match) {
-			return parseFloat(match[1]);
-		}
-		return null;
-	}
+
 }

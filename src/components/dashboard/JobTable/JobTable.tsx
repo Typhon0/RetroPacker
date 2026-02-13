@@ -27,10 +27,6 @@ import {
 } from "@/components/ui/select";
 import { useQueueStore } from "@/stores/useQueueStore";
 import type { Job, WorkflowType } from "@/stores/useQueueStore";
-import { useRepositories } from "@/presentation/context/RepositoryContext";
-import { ProcessJobUseCase } from "@/domain/usecases/ProcessJobUseCase";
-import { usePackerStore } from "@/stores/usePackerStore";
-import { useShallow } from "zustand/react/shallow";
 import { ProcessRegistry } from "@/services/ProcessRegistry";
 
 import type { TreeNode } from "./JobTreeBuilder";
@@ -52,36 +48,29 @@ export function JobTable({
 	const queue = useQueueStore((state) => state.queues[workflow]);
 	const removeJob = useQueueStore((state) => state.removeJob);
 	const updateJob = useQueueStore((state) => state.updateJob);
-
-	// Clean Architecture: Get repositories
-	const repositories = useRepositories();
-	// Use useShallow to avoid creating new object references on every render
-	const settings = usePackerStore(
-		useShallow((state) => ({
-			preset: state.preset,
-			customCompression: state.customCompression,
-			chd: state.chd,
-			dolphin: state.dolphin,
-			deleteSourceAfterSuccess: state.deleteSourceAfterSuccess,
-		})),
-	);
-
-	// Memoized use case
-	const processJobUseCase = useMemo(
-		() => new ProcessJobUseCase(repositories),
-		[repositories],
-	);
+	const requestStart = useQueueStore((state) => state.requestStart);
 
 	const handleStartJob = useCallback(
-		async (job: Job) => {
-			try {
-				const outputDir = await repositories.fileSystem.dirname(job.path);
-				await processJobUseCase.execute(job, outputDir, workflow, settings);
-			} catch (e) {
-				console.error("Failed to start job", e);
+		(job: Job) => {
+			if (job.status !== "pending" && job.status !== "failed") {
+				return;
 			}
+
+			if (job.status === "failed") {
+				updateJob(workflow, job.id, {
+					status: "pending",
+					progress: 0,
+					errorMessage: undefined,
+					etaSeconds: undefined,
+					startTime: undefined,
+				});
+			}
+
+			// Manual starts should also release any cancellation latch.
+			ProcessRegistry.clearWorkflowCancellation(workflow);
+			requestStart(workflow, job.id);
 		},
-		[processJobUseCase, repositories.fileSystem, workflow, settings],
+		[requestStart, updateJob, workflow],
 	);
 
 	const handleRemoveJob = useCallback(
@@ -136,20 +125,37 @@ export function JobTable({
 	);
 
 	const handleStartFolder = useCallback(
-		async (node: TreeNode) => {
-			const startPendingInNode = async (targetNode: TreeNode) => {
+		(node: TreeNode) => {
+			const idsToStart: string[] = [];
+			const collectPendingInNode = (targetNode: TreeNode) => {
 				for (const job of targetNode.jobs) {
 					if (job.status === "pending" || job.status === "failed") {
-						await handleStartJob(job);
+						if (job.status === "failed") {
+							updateJob(workflow, job.id, {
+								status: "pending",
+								progress: 0,
+								errorMessage: undefined,
+								etaSeconds: undefined,
+								startTime: undefined,
+							});
+						}
+						idsToStart.push(job.id);
 					}
 				}
 				for (const child of Object.values(targetNode.children)) {
-					await startPendingInNode(child);
+					collectPendingInNode(child);
 				}
 			};
-			await startPendingInNode(node);
+
+			collectPendingInNode(node);
+			if (idsToStart.length === 0) return;
+
+			ProcessRegistry.clearWorkflowCancellation(workflow);
+			for (const jobId of idsToStart) {
+				requestStart(workflow, jobId);
+			}
 		},
-		[handleStartJob],
+		[requestStart, updateJob, workflow],
 	);
 
 	// Filters
@@ -293,6 +299,36 @@ export function JobTable({
 		[],
 	);
 
+	// Remove all jobs in a folder
+	const handleRemoveFolder = useCallback(
+		async (node: TreeNode) => {
+			const jobsToRemove: string[] = [];
+
+			// Recursive function to collect all job IDs
+			const collectJobIds = (n: TreeNode) => {
+				n.jobs.forEach((job) => jobsToRemove.push(job.id));
+				Object.values(n.children).forEach(collectJobIds);
+			};
+
+			collectJobIds(node);
+
+			// Cancel any active jobs first
+			for (const jobId of jobsToRemove) {
+				const job = queue.find((j) => j.id === jobId);
+				if (job && job.status === "processing") {
+					try {
+						await ProcessRegistry.cancel(workflow, jobId);
+					} catch (e) {
+						console.warn(`Failed to cancel job ${jobId}`, e);
+					}
+				}
+				// Remove from store
+				removeJob(workflow, jobId);
+			}
+		},
+		[queue, workflow, removeJob],
+	);
+
 	// Recursive render function using extracted components
 	const renderNode = useCallback(
 		(node: TreeNode, depth: number = 0): React.ReactNode[] => {
@@ -315,6 +351,7 @@ export function JobTable({
 						onToggle={() => togglePath(node.path)}
 						onStartFolder={() => handleStartFolder(node)}
 						onSetPlatform={(platform) => setFolderPlatform(node.path, platform)}
+						onRemove={() => handleRemoveFolder(node)}
 					/>,
 				);
 			}
