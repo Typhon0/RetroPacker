@@ -29,6 +29,9 @@ import { MockNotificationService } from "../../data/repositories/MockNotificatio
 import { ZustandJobRepository } from "../../data/repositories/ZustandJobRepository";
 import { ZustandSettingsRepository } from "../../data/repositories/ZustandSettingsRepository";
 
+// Process management
+import { ProcessRegistry } from "../../services/ProcessRegistry";
+
 /**
  * All available repositories for dependency injection.
  */
@@ -63,8 +66,10 @@ function createRepositories(): Repositories {
 	const settingsRepository = new ZustandSettingsRepository();
 
 	if (isTauri) {
+		const commandExecutor = new TauriCommandExecutor();
+		ProcessRegistry.init(commandExecutor);
 		return {
-			commandExecutor: new TauriCommandExecutor(),
+			commandExecutor,
 			fileSystem: new TauriFileSystemRepository(),
 			notificationService: new TauriNotificationService(),
 			jobRepository,
@@ -74,8 +79,10 @@ function createRepositories(): Repositories {
 
 	// Use mock implementations for development/testing
 	console.log("[RepositoryContext] Running in mock mode (Tauri not detected)");
+	const commandExecutor = new MockCommandExecutor();
+	ProcessRegistry.init(commandExecutor);
 	return {
-		commandExecutor: new MockCommandExecutor(),
+		commandExecutor,
 		fileSystem: new MockFileSystemRepository(),
 		notificationService: new MockNotificationService(),
 		jobRepository,

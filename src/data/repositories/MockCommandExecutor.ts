@@ -47,8 +47,6 @@ export class MockCommandExecutor implements ICommandExecutor {
 
 				await new Promise((resolve) => setTimeout(resolve, 100));
 
-
-
 				if (progress % 20 === 0) {
 					callbacks.onStdout?.(`[MOCK] Processing... ${progress}% complete`);
 				}
@@ -82,5 +80,12 @@ export class MockCommandExecutor implements ICommandExecutor {
 			code: 0,
 			signal: null,
 		};
+	}
+
+	/**
+	 * Mock force-kill (no-op).
+	 */
+	async forceKillProcess(_pid: number): Promise<void> {
+		// No-op in mock mode
 	}
 }

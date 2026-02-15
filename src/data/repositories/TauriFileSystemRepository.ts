@@ -11,10 +11,9 @@ import {
 	readDir,
 	mkdir,
 	writeTextFile,
-	open,
-	SeekMode,
 } from "@tauri-apps/plugin-fs";
 import { join, dirname as pathDirname } from "@tauri-apps/api/path";
+import { invoke } from "@tauri-apps/api/core";
 import { Command } from "@tauri-apps/plugin-shell";
 import {
 	IFileSystemRepository,
@@ -84,26 +83,19 @@ export class TauriFileSystemRepository implements IFileSystemRepository {
 	}
 
 	/**
-	 * Read bytes from file.
+	 * Read bytes from file via Rust backend command.
 	 */
 	async readBytes(
 		path: string,
 		offset?: number,
 		length?: number,
 	): Promise<Uint8Array> {
-		const file = await open(path, { read: true });
-
-		try {
-			if (offset !== undefined && offset > 0) {
-				await file.seek(offset, SeekMode.Start);
-			}
-
-			const buffer = new Uint8Array(length ?? 2048);
-			await file.read(buffer);
-			return buffer;
-		} finally {
-			await file.close();
-		}
+		const data = await invoke<ArrayBuffer>("read_file_bytes", {
+			path,
+			offset: offset ?? null,
+			length: length ?? null,
+		});
+		return new Uint8Array(data);
 	}
 
 	/**
@@ -148,7 +140,9 @@ Add-Type -AssemblyName Microsoft.VisualBasic
 				]);
 			} else if (os === "macos") {
 				// Use osascript to tell Finder to move the file to trash
-				const escapedPath = filePath.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+				const escapedPath = filePath
+					.replace(/\\/g, "\\\\")
+					.replace(/"/g, '\\"');
 				command = Command.create("osascript", [
 					"-e",
 					`tell application "Finder" to delete (POSIX file "${escapedPath}" as alias)`,
@@ -171,5 +165,12 @@ Add-Type -AssemblyName Microsoft.VisualBasic
 			console.error("Trash operation failed:", e);
 			return false;
 		}
+	}
+
+	/**
+	 * Compute SHA-256 hash of a file via Rust backend command.
+	 */
+	async computeFileHash(path: string): Promise<string> {
+		return invoke<string>("compute_file_hash", { path });
 	}
 }

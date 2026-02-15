@@ -59,6 +59,7 @@ interface QueueState {
 	setProcessing: (workflow: WorkflowType, isProcessing: boolean) => void;
 	requestStart: (workflow: WorkflowType, id: string) => void;
 	consumeStartRequest: (workflow: WorkflowType, id: string) => void;
+	retryFailed: (workflow: WorkflowType) => void;
 
 	// Helpers
 	getQueue: (workflow: WorkflowType) => Job[];
@@ -132,6 +133,23 @@ export const useQueueStore = create<QueueState>()(
 				const idx = state.startRequests[workflow].indexOf(id);
 				if (idx !== -1) {
 					state.startRequests[workflow].splice(idx, 1);
+				}
+			}),
+
+		retryFailed: (workflow) =>
+			set((state) => {
+				for (const job of state.queues[workflow]) {
+					if (job.status === "failed") {
+						job.status = "pending";
+						job.progress = 0;
+						job.errorMessage = undefined;
+						job.etaSeconds = undefined;
+						job.startTime = undefined;
+						job.outputLog = [];
+						if (!state.startRequests[workflow].includes(job.id)) {
+							state.startRequests[workflow].push(job.id);
+						}
+					}
 				}
 			}),
 

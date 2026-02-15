@@ -94,4 +94,11 @@ export class MockFileSystemRepository implements IFileSystemRepository {
 		console.log("[MOCK] moveToTrash called");
 		return true;
 	}
+
+	/**
+	 * Return a mock hash.
+	 */
+	async computeFileHash(_path: string): Promise<string> {
+		return "mock_sha256_" + Math.random().toString(36).substring(2, 18);
+	}
 }

@@ -1,12 +1,13 @@
 import { useEffect, useCallback, useRef } from "react";
 import { WorkflowTabs } from "@/components/dashboard/WorkflowTabs";
 import { GlobalSettings } from "@/components/dashboard/GlobalSettings";
+import { BatchProgressBar } from "@/components/dashboard/BatchProgressBar";
 import { useQueueProcessor } from "@/hooks/useQueueProcessor";
 import { useTaskbarProgress } from "@/hooks/useTaskbarProgress";
 import { useSleepPrevention } from "@/hooks/useSleepPrevention";
 import { useQueueStore } from "@/stores/useQueueStore";
 import { Button } from "@/components/ui/button";
-import { Trash2, Play, Pause } from "lucide-react";
+import { Trash2, Play, Pause, RotateCcw } from "lucide-react";
 import { usePackerStore } from "@/stores/usePackerStore";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { RepositoryProvider } from "@/presentation/context/RepositoryContext";
@@ -37,6 +38,9 @@ function AppContent() {
 		(state) => state.isProcessing[activeWorkflow],
 	);
 	const setProcessing = useQueueStore((state) => state.setProcessing);
+	const retryFailed = useQueueStore((state) => state.retryFailed);
+
+	const failedCount = queue.filter((j) => j.status === "failed").length;
 
 	// Ref to track initialization status to prevent strict mode double-invocations
 	const hasInitialized = useRef(false);
@@ -97,6 +101,11 @@ function AppContent() {
 		}
 	}, [activeWorkflow, clearQueue]);
 
+	const handleRetryFailed = useCallback(() => {
+		ProcessRegistry.clearWorkflowCancellation(activeWorkflow);
+		retryFailed(activeWorkflow);
+	}, [activeWorkflow, retryFailed]);
+
 	return (
 		<TooltipProvider>
 			<div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
@@ -141,6 +150,16 @@ function AppContent() {
 									)}
 									{isProcessing ? "Pause" : "Start"}
 								</Button>
+								{failedCount > 0 && (
+									<Button
+										variant="outline"
+										size="sm"
+										onClick={handleRetryFailed}
+									>
+										<RotateCcw className="h-4 w-4 mr-2" />
+										Retry {failedCount} Failed
+									</Button>
+								)}
 								<Button
 									variant="destructive"
 									size="sm"
@@ -153,6 +172,9 @@ function AppContent() {
 						)}
 					</div>
 				</header>
+
+				{/* Batch Progress Summary */}
+				<BatchProgressBar workflow={activeWorkflow} />
 
 				{/* Main Content with Workflow Tabs */}
 				<main className="flex-1 container mx-auto p-6 flex flex-col gap-6 overflow-hidden">

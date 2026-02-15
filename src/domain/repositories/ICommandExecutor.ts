@@ -78,4 +78,13 @@ export interface ICommandExecutor {
 	 * @returns Command result with exit code
 	 */
 	execute(binary: BinaryName, args: string[]): Promise<CommandResult>;
+
+	/**
+	 * Force-kill a process by PID using OS-level commands.
+	 * On Windows: taskkill /PID <pid> /T /F
+	 * On Unix: kill -9 <pid>
+	 *
+	 * @param pid - Process ID to force-kill
+	 */
+	forceKillProcess(pid: number): Promise<void>;
 }

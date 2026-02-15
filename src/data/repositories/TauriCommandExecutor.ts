@@ -85,5 +85,39 @@ export class TauriCommandExecutor implements ICommandExecutor {
 		};
 	}
 
+	/**
+	 * Force-kill a process by PID using OS-level commands.
+	 */
+	async forceKillProcess(pid: number): Promise<void> {
+		const isWindows =
+			typeof navigator !== "undefined" &&
+			navigator.userAgent.toLowerCase().includes("windows");
 
+		try {
+			if (isWindows) {
+				const cmd = Command.create("taskkill", [
+					"/PID",
+					pid.toString(),
+					"/T",
+					"/F",
+				]);
+				await cmd
+					.spawn()
+					.then(() => {
+						/* Process spawned successfully */
+					})
+					.catch(() => {
+						/* Ignore spawn errors */
+					});
+			} else {
+				const cmd = Command.create("kill", ["-9", pid.toString()]);
+				await cmd
+					.execute()
+					.then(() => {})
+					.catch(() => {});
+			}
+		} catch {
+			// Ignore force-kill failures
+		}
+	}
 }

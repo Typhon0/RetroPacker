@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Settings } from "lucide-react";
+import { Settings, FolderOpen, X } from "lucide-react";
 import { usePackerStore } from "@/stores/usePackerStore";
 import {
 	Select,
@@ -18,6 +18,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { open } from "@tauri-apps/plugin-dialog";
 
 export function GlobalSettings() {
 	const {
@@ -30,7 +31,20 @@ export function GlobalSettings() {
 		setDolphinSetting,
 		deleteSourceAfterSuccess,
 		setDeleteSourceAfterSuccess,
+		outputDirectory,
+		setOutputDirectory,
 	} = usePackerStore();
+
+	const handlePickOutputDir = async () => {
+		const selected = await open({
+			directory: true,
+			multiple: false,
+			title: "Select Output Directory",
+		});
+		if (selected && typeof selected === "string") {
+			setOutputDirectory(selected);
+		}
+	};
 
 	return (
 		<Dialog>
@@ -89,6 +103,38 @@ export function GlobalSettings() {
 										</span>
 									</div>
 								</label>
+
+								{/* Output Directory */}
+								<div className="p-2 hover:bg-muted/50 rounded-md transition-colors">
+									<div className="flex flex-col gap-1">
+										<span className="text-sm font-medium">Output directory</span>
+										<span className="text-xs text-muted-foreground">
+											Where processed files are saved. Leave empty to use the source file&apos;s folder.
+										</span>
+										<div className="flex items-center gap-2 mt-1">
+											<button
+												type="button"
+												onClick={handlePickOutputDir}
+												className="flex items-center gap-2 h-8 px-3 rounded-md border border-input bg-transparent text-sm hover:bg-muted/50 transition-colors flex-1 min-w-0 text-left"
+											>
+												<FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+												<span className="truncate text-muted-foreground">
+													{outputDirectory || "Same as source"}
+												</span>
+											</button>
+											{outputDirectory && (
+												<button
+													type="button"
+													onClick={() => setOutputDirectory("")}
+													className="h-8 w-8 flex items-center justify-center rounded-md border border-input hover:bg-destructive/10 hover:text-destructive transition-colors shrink-0"
+													title="Reset to source directory"
+												>
+													<X className="h-3.5 w-3.5" />
+												</button>
+											)}
+										</div>
+									</div>
+								</div>
 							</div>
 						</TabsContent>
 

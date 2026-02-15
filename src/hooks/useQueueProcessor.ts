@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useQueueStore, WorkflowType, Job } from "../stores/useQueueStore";
 import { usePackerStore } from "../stores/usePackerStore";
 import { useRepositories } from "../presentation/context/RepositoryContext";
@@ -25,11 +25,18 @@ export function useQueueProcessor(workflow: WorkflowType) {
 			chd: state.chd,
 			dolphin: state.dolphin,
 			deleteSourceAfterSuccess: state.deleteSourceAfterSuccess,
+			outputDirectory: state.outputDirectory,
 		})),
 	);
 
 	// Inject repositories
 	const repositories = useRepositories();
+
+	// Memoize ProcessJobUseCase so we don't create a new instance per job
+	const processJobUseCase = useMemo(
+		() => new ProcessJobUseCase(repositories),
+		[repositories],
+	);
 
 	useEffect(() => {
 		const processQueue = async () => {
@@ -65,10 +72,11 @@ export function useQueueProcessor(workflow: WorkflowType) {
 			}
 
 			try {
-				const outputDir = await repositories.fileSystem.dirname(nextJob.path);
+				const outputDir = settings.outputDirectory
+					? settings.outputDirectory
+					: await repositories.fileSystem.dirname(nextJob.path);
 
-				// Instantiate Use Case with dependencies
-				const processJobUseCase = new ProcessJobUseCase(repositories);
+				// Use memoized Use Case instance
 
 				// Execute Job
 				// Note: floating promise is intentional here as we don't await completion to allow concurrency
@@ -99,5 +107,6 @@ export function useQueueProcessor(workflow: WorkflowType) {
 		workflow,
 		settings,
 		repositories,
+		processJobUseCase,
 	]);
 }

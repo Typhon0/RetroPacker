@@ -1,6 +1,6 @@
 import type { SpawnedProcess } from "@/domain/repositories/ICommandExecutor";
+import type { ICommandExecutor } from "@/domain/repositories/ICommandExecutor";
 import type { WorkflowType } from "@/domain/types/workflow.types";
-import { Command } from "@tauri-apps/plugin-shell";
 
 /**
  * Module-level registry for managing spawned processes.
@@ -11,6 +11,17 @@ import { Command } from "@tauri-apps/plugin-shell";
 const processes = new Map<string, SpawnedProcess>();
 const cancelledJobs = new Set<string>();
 const cancelledWorkflows = new Set<WorkflowType>();
+
+// Injected command executor for force-kill support
+let commandExecutor: ICommandExecutor | null = null;
+
+/**
+ * Initialize the ProcessRegistry with a command executor.
+ * Must be called before any cancel operations that require force-kill.
+ */
+export function init(executor: ICommandExecutor): void {
+	commandExecutor = executor;
+}
 
 // Helper to generate unique key
 const getKey = (workflow: WorkflowType, jobId: string): string => {
@@ -166,43 +177,11 @@ async function terminateProcess(process: SpawnedProcess): Promise<void> {
 	}
 
 	const pid = process.pid;
-	if (!pid) return;
+	if (!pid || !commandExecutor) return;
 
-	const isWindows =
-		typeof navigator !== "undefined" &&
-		navigator.userAgent.toLowerCase().includes("windows");
-
-	// 2. Force Kill (Taskkill / kill -9)
+	// 2. Force Kill via injected command executor
 	try {
-		if (isWindows) {
-			const cmd = Command.create("taskkill", [
-				"/PID",
-				pid.toString(),
-				"/T",
-				"/F",
-			]);
-			// Fix: Handle spawn promise safely
-			await withTimeout(
-				cmd
-					.spawn()
-					.then(() => {
-						/* Process spawned successfully */
-					})
-					.catch(() => {
-						/* Ignore spawn errors */
-					}),
-				"Taskkill",
-			);
-		} else {
-			const cmd = Command.create("kill", ["-9", pid.toString()]);
-			await withTimeout(
-				cmd
-					.execute()
-					.then(() => {})
-					.catch(() => {}),
-				"Kill -9",
-			);
-		}
+		await withTimeout(commandExecutor.forceKillProcess(pid), "Force kill");
 	} catch {
 		// Final fallback: ignore
 	}
@@ -211,6 +190,7 @@ async function terminateProcess(process: SpawnedProcess): Promise<void> {
 // Export as a namespace object for backward compatibility if needed,
 // but prefer named imports.
 export const ProcessRegistry = {
+	init,
 	register,
 	unregister,
 	wasCancelled,

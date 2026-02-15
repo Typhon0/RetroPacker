@@ -251,6 +251,7 @@ export class MetadataService {
 		if (inFlight) return inFlight;
 
 		const task = MetadataService.coverLimiter.run(async () => {
+			// 1. Local cover (fast disk check — stays first)
 			const localCover = await MetadataService.findLocalCover(filePath);
 			if (localCover) {
 				console.log(`[Metadata] Found local cover: ${localCover}`);
@@ -259,23 +260,23 @@ export class MetadataService {
 				return localUrl;
 			}
 
+			// 2. GameTDB + LibRetro in parallel (both are HEAD-check strategies)
+			const networkStrategies: Promise<string | null>[] = [];
 			if (gameId) {
-				const cover = await MetadataService.tryFetchGameTDB(gameId, system);
-				if (cover) {
-					MetadataService.coverCache.set(cacheKey, cover);
-					return cover;
-				}
+				networkStrategies.push(MetadataService.tryFetchGameTDB(gameId, system));
 			}
-
-			const libRetroCover = await MetadataService.tryFetchLibRetro(
-				filename,
-				system,
+			networkStrategies.push(
+				MetadataService.tryFetchLibRetro(filename, system),
 			);
-			if (libRetroCover) {
-				MetadataService.coverCache.set(cacheKey, libRetroCover);
-				return libRetroCover;
+
+			const results = await Promise.all(networkStrategies);
+			const networkCover = results.find((r) => r !== null) ?? null;
+			if (networkCover) {
+				MetadataService.coverCache.set(cacheKey, networkCover);
+				return networkCover;
 			}
 
+			// 3. Scrape fallback (heavy — stays last)
 			if (
 				gameId &&
 				(system === "Wii" ||
@@ -340,19 +341,18 @@ export class MetadataService {
 		const regions = MetadataService.getGameTdbRegions(gameId);
 		const systemCode = MetadataService.mapSystemToGameTDB(system);
 
+		// Build all candidate URLs across regions
+		const urls: string[] = [];
 		for (const region of regions) {
-			const urls = [
+			urls.push(
 				`https://art.gametdb.com/${systemCode}/cover3D/${region}/${gameId}.png`,
 				`https://art.gametdb.com/${systemCode}/cover3D/${region}/${gameId}.jpg`,
 				`https://art.gametdb.com/${systemCode}/cover/${region}/${gameId}.png`,
 				`https://art.gametdb.com/${systemCode}/cover/${region}/${gameId}.jpg`,
-			];
-
-			for (const url of urls) {
-				if (await MetadataService.checkUrl(url)) return url;
-			}
+			);
 		}
-		return null;
+
+		return MetadataService.checkFirstUrl(urls);
 	}
 
 	private static async tryFetchLibRetro(
@@ -373,21 +373,19 @@ export class MetadataService {
 		const noRegion = exact.replace(/\s*\(.*?\)\s*/g, "").trim();
 		const safe = noRegion.replace(/\s+/g, "_");
 
-		const candidates = new Set([
+		const candidateNames = new Set([
 			`${encodeURIComponent(exact)}.png`,
 			`${encodeURIComponent(noRegion)}.png`,
 			`${encodeURIComponent(safe)}.png`,
 			`${encodeURIComponent(exact.replace(/_v[\d\.]+$/, ""))}.png`,
 		]);
 
-		for (const cand of candidates) {
-			const url = `${base}/${cand}`;
-			if (await MetadataService.checkUrl(url)) {
-				console.log(`[Metadata] Found LibRetro match: ${cand}`);
-				return url;
-			}
+		const urls = [...candidateNames].map((cand) => `${base}/${cand}`);
+		const result = await MetadataService.checkFirstUrl(urls);
+		if (result) {
+			console.log(`[Metadata] Found LibRetro match: ${result}`);
 		}
-		return null;
+		return result;
 	}
 
 	private static async scrapeGameTDB(
@@ -435,6 +433,27 @@ export class MetadataService {
 			return response.ok && response.status === 200;
 		} catch {
 			return false;
+		}
+	}
+
+	/**
+	 * Fire HEAD requests for all URLs concurrently.
+	 * Returns the first URL that responds 200, or null if all fail.
+	 */
+	private static async checkFirstUrl(urls: string[]): Promise<string | null> {
+		if (urls.length === 0) return null;
+
+		try {
+			return await Promise.any(
+				urls.map(async (url) => {
+					const ok = await MetadataService.checkUrl(url);
+					if (ok) return url;
+					throw new Error("not found");
+				}),
+			);
+		} catch {
+			// AggregateError — all URLs failed
+			return null;
 		}
 	}
 

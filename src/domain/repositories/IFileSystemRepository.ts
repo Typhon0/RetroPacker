@@ -120,4 +120,12 @@ export interface IFileSystemRepository {
 	 * @returns True if successful
 	 */
 	moveToTrash(path: string): Promise<boolean>;
+
+	/**
+	 * Compute a SHA-256 hash of a file.
+	 *
+	 * @param path - Path to the file
+	 * @returns Hex-encoded hash string
+	 */
+	computeFileHash(path: string): Promise<string>;
 }

@@ -37,6 +37,9 @@ interface PackerState {
 	// Delete source setting
 	deleteSourceAfterSuccess: boolean;
 
+	// Output directory (empty = same as source)
+	outputDirectory: string;
+
 	// Actions
 	setActiveWorkflow: (workflow: WorkflowType) => void;
 	setPreset: (preset: CompressionPreset) => void;
@@ -58,6 +61,8 @@ interface PackerState {
 	setPlatform: (platform: Platform) => void;
 
 	setDeleteSourceAfterSuccess: (val: boolean) => void;
+
+	setOutputDirectory: (dir: string) => void;
 }
 
 export const usePackerStore = create<PackerState>()(
@@ -88,6 +93,8 @@ export const usePackerStore = create<PackerState>()(
 
 			deleteSourceAfterSuccess: false,
 
+			outputDirectory: "",
+
 			setActiveWorkflow: (activeWorkflow) => set({ activeWorkflow }),
 			setPreset: (preset) => set({ preset }),
 			setConcurrency: (concurrency) => set({ concurrency }),
@@ -107,10 +114,12 @@ export const usePackerStore = create<PackerState>()(
 
 			setDeleteSourceAfterSuccess: (deleteSourceAfterSuccess) =>
 				set({ deleteSourceAfterSuccess }),
+
+			setOutputDirectory: (outputDirectory) => set({ outputDirectory }),
 		}),
 		{
 			name: "retropacker-settings",
-			version: 3, // Increment version for tab-based migration
+			version: 4,
 		},
 	),
 );
