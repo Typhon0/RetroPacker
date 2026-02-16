@@ -74,11 +74,17 @@ export class ProcessJobUseCase {
 	): Promise<void> {
 		const lockKey = `${workflow}:${job.id}`;
 		const ext = job.path.split(".").pop()?.toLowerCase() ?? "";
+		const isCancelledBeforeStart = (): boolean => {
+			return (
+				ProcessRegistry.isWorkflowCancelled(workflow) ||
+				ProcessRegistry.wasCancelled(workflow, job.id)
+			);
+		};
 
-		// Check if workflow is being cancelled - bail out early
-		if (ProcessRegistry.isWorkflowCancelled(workflow)) {
+		// Check cancellation strictly before any side effects.
+		if (isCancelledBeforeStart()) {
 			console.log(
-				`[ProcessJobUseCase] Workflow ${workflow} is cancelled, skipping job ${job.id}`,
+				`[ProcessJobUseCase] Workflow ${workflow} or job ${job.id} is cancelled, skipping`,
 			);
 			return;
 		}
@@ -93,156 +99,231 @@ export class ProcessJobUseCase {
 		ProcessJobUseCase.spawnLock.add(lockKey);
 
 		const { commandExecutor, jobRepository, notificationService } = this.deps;
-
-		// Mark job as processing
-		jobRepository.updateJob(workflow, job.id, {
-			status: "processing",
-			progress: 0,
-			errorMessage: undefined,
-			startTime: Date.now(),
-		});
-
-		// Determine which tool to use
-		const usesDolphin = this.shouldUseDolphin(job);
-		this.validateWorkflowSupport(workflow, ext, usesDolphin);
-		const binary = usesDolphin ? "DolphinTool" : "chdman";
-
-		// Build command arguments
-		const args = await this.buildCommandArgs(
-			job,
-			outputDir,
-			workflow,
-			settings,
-			usesDolphin,
-		);
-
-		jobRepository.appendLog(
-			workflow,
-			job.id,
-			`Starting: ${binary} ${args.join(" ")}`,
-		);
-
-		// Set up progress simulation for DolphinTool (doesn't output progress)
 		let progressInterval: ReturnType<typeof setInterval> | undefined;
-		if (usesDolphin) {
-			progressInterval = this.startProgressSimulation(
-				job,
-				workflow,
-				jobRepository,
-			);
-		}
+		let cleanupOwnedByCallbacks = false;
+		let hasCleanedUp = false;
+		let terminalCallbackHandled = false;
 
-		const callbacks: CommandCallbacks = {
-			onStdout: (line) => {
-				jobRepository.appendLog(workflow, job.id, line);
-				if (!usesDolphin) {
-					this.parseProgress(line, job, workflow, jobRepository);
-				} else if (workflow === "info") {
-					this.parseDolphinInfo(line, job, workflow, jobRepository);
-				}
-			},
-			onStderr: (line) => {
-				jobRepository.appendLog(workflow, job.id, `[stderr] ${line}`);
-				if (!usesDolphin) {
-					this.parseProgress(line, job, workflow, jobRepository);
-				}
-			},
-			onClose: async (result) => {
-				ProcessRegistry.unregister(workflow, job.id);
-				ProcessJobUseCase.spawnLock.delete(lockKey);
-				if (progressInterval) {
-					clearInterval(progressInterval);
-				}
-
-				// Check if job was cancelled by user
-				const wasCancelled = ProcessRegistry.wasCancelled(workflow, job.id);
-				ProcessRegistry.clearCancelled(workflow, job.id);
-
-				if (result.code === 0) {
-					jobRepository.updateJob(workflow, job.id, {
-						status: "completed",
-						progress: 100,
-						etaSeconds: 0,
-					});
-
-					// Delete source file if setting is enabled (compress/extract only)
-					if (
-						settings.deleteSourceAfterSuccess &&
-						(workflow === "compress" || workflow === "extract")
-					) {
-						try {
-							const moved = await this.deps.fileSystem.moveToTrash(job.path);
-							if (moved) {
-								jobRepository.appendLog(
-									workflow,
-									job.id,
-									`Source file moved to recycle bin: ${job.filename}`,
-								);
-							} else {
-								jobRepository.appendLog(
-									workflow,
-									job.id,
-									`Warning: Failed to move source file to recycle bin: ${job.filename}`,
-								);
-							}
-						} catch (err) {
-							const msg = err instanceof Error ? err.message : String(err);
-							jobRepository.appendLog(
-								workflow,
-								job.id,
-								`Warning: Failed to delete source file: ${msg}`,
-							);
-						}
-					}
-
-					await notificationService.notifySuccess(
-						`${this.getWorkflowLabel(workflow)} Completed`,
-						`${job.filename} has finished processing.`,
-					);
-				} else if (wasCancelled || result.signal !== null) {
-					// Process was cancelled
-					jobRepository.updateJob(workflow, job.id, {
-						status: "failed",
-						errorMessage: "Cancelled",
-					});
-				} else {
-					jobRepository.updateJob(workflow, job.id, {
-						status: "failed",
-						errorMessage: `Exited with code ${result.code}`,
-					});
-					await notificationService.notifyFailure(
-						`${this.getWorkflowLabel(workflow)} Failed`,
-						`${job.filename} failed to process.`,
-					);
-				}
-			},
-			onError: async (error) => {
-				ProcessRegistry.unregister(workflow, job.id);
-				ProcessJobUseCase.spawnLock.delete(lockKey);
-				if (progressInterval) {
-					clearInterval(progressInterval);
-				}
-				jobRepository.appendLog(workflow, job.id, `Error: ${error.message}`);
-				jobRepository.updateJob(workflow, job.id, {
-					status: "failed",
-					errorMessage: error.message,
-				});
-				await notificationService.notifyFailure(
-					`${this.getWorkflowLabel(workflow)} Failed`,
-					`${job.filename}: ${error.message}`,
-				);
-			},
+		const beginTerminalCallback = (): boolean => {
+			if (terminalCallbackHandled) return false;
+			terminalCallbackHandled = true;
+			return true;
 		};
 
-		try {
-			const process = await commandExecutor.spawn(binary, args, callbacks);
-			jobRepository.appendLog(workflow, job.id, `PID: ${process.pid}`);
-			ProcessRegistry.register(workflow, job.id, process);
-		} catch (e) {
+		const cleanup = (): void => {
+			if (hasCleanedUp) return;
+			hasCleanedUp = true;
+			ProcessRegistry.unregister(workflow, job.id);
 			ProcessJobUseCase.spawnLock.delete(lockKey);
 			if (progressInterval) {
 				clearInterval(progressInterval);
+				progressInterval = undefined;
 			}
+		};
+
+		try {
+			// Re-check after locking and before mutating job state.
+			if (isCancelledBeforeStart()) {
+				console.log(
+					`[ProcessJobUseCase] Job ${lockKey} was cancelled before start, skipping`,
+				);
+				return;
+			}
+
+			// Mark job as processing
+			jobRepository.updateJob(workflow, job.id, {
+				status: "processing",
+				progress: 0,
+				errorMessage: undefined,
+				startTime: Date.now(),
+			});
+
+			// Determine which tool to use
+			const usesDolphin = this.shouldUseDolphin(job);
+			this.validateWorkflowSupport(workflow, ext, usesDolphin);
+			const binary = usesDolphin ? "DolphinTool" : "chdman";
+
+			// Build command arguments
+			const args = await this.buildCommandArgs(
+				job,
+				outputDir,
+				workflow,
+				settings,
+				usesDolphin,
+			);
+
+			jobRepository.appendLog(
+				workflow,
+				job.id,
+				`Starting: ${binary} ${args.join(" ")}`,
+			);
+
+			// Set up progress simulation for DolphinTool (doesn't output progress)
+			if (usesDolphin) {
+				progressInterval = this.startProgressSimulation(
+					job,
+					workflow,
+					jobRepository,
+				);
+			}
+
+			const callbacks: CommandCallbacks = {
+				onStdout: (line) => {
+					jobRepository.appendLog(workflow, job.id, line);
+					if (!usesDolphin) {
+						this.parseProgress(line, job, workflow, jobRepository);
+					} else if (workflow === "info") {
+						this.parseDolphinInfo(line, job, workflow, jobRepository);
+					}
+				},
+				onStderr: (line) => {
+					jobRepository.appendLog(workflow, job.id, `[stderr] ${line}`);
+					if (!usesDolphin) {
+						this.parseProgress(line, job, workflow, jobRepository);
+					}
+				},
+				onClose: (result) => {
+					void (async () => {
+						try {
+							if (!beginTerminalCallback()) {
+								return;
+							}
+
+							// Check if job was cancelled by user
+							const wasCancelled = ProcessRegistry.wasCancelled(workflow, job.id);
+							ProcessRegistry.clearCancelled(workflow, job.id);
+
+							if (result.code === 0) {
+								jobRepository.updateJob(workflow, job.id, {
+									status: "completed",
+									progress: 100,
+									etaSeconds: 0,
+								});
+
+								// Delete source file if setting is enabled (compress/extract only)
+								if (
+									settings.deleteSourceAfterSuccess &&
+									(workflow === "compress" || workflow === "extract")
+								) {
+									try {
+										const moved = await this.deps.fileSystem.moveToTrash(job.path);
+										if (moved) {
+											jobRepository.appendLog(
+												workflow,
+												job.id,
+												`Source file moved to recycle bin: ${job.filename}`,
+											);
+										} else {
+											jobRepository.appendLog(
+												workflow,
+												job.id,
+												`Warning: Failed to move source file to recycle bin: ${job.filename}`,
+											);
+										}
+									} catch (err) {
+										const msg = err instanceof Error ? err.message : String(err);
+										jobRepository.appendLog(
+											workflow,
+											job.id,
+											`Warning: Failed to delete source file: ${msg}`,
+										);
+									}
+								}
+
+								await notificationService.notifySuccess(
+									`${this.getWorkflowLabel(workflow)} Completed`,
+									`${job.filename} has finished processing.`,
+								);
+							} else if (wasCancelled || result.signal !== null) {
+								// Process was cancelled
+								jobRepository.updateJob(workflow, job.id, {
+									status: "failed",
+									errorMessage: "Cancelled",
+								});
+							} else {
+								jobRepository.updateJob(workflow, job.id, {
+									status: "failed",
+									errorMessage: `Exited with code ${result.code}`,
+								});
+								await notificationService.notifyFailure(
+									`${this.getWorkflowLabel(workflow)} Failed`,
+									`${job.filename} failed to process.`,
+								);
+							}
+						} catch (error) {
+							console.error(
+								`[ProcessJobUseCase] onClose handler failed for ${lockKey}:`,
+								error,
+							);
+						} finally {
+							cleanup();
+						}
+					})();
+				},
+				onError: (error) => {
+					void (async () => {
+						try {
+							if (!beginTerminalCallback()) {
+								return;
+							}
+
+							const wasCancelled = ProcessRegistry.wasCancelled(workflow, job.id);
+							ProcessRegistry.clearCancelled(workflow, job.id);
+
+							if (wasCancelled) {
+								jobRepository.appendLog(
+									workflow,
+									job.id,
+									"Error: Process cancelled before completion",
+								);
+								jobRepository.updateJob(workflow, job.id, {
+									status: "failed",
+									errorMessage: "Cancelled",
+								});
+								return;
+							}
+
+							jobRepository.appendLog(workflow, job.id, `Error: ${error.message}`);
+							jobRepository.updateJob(workflow, job.id, {
+								status: "failed",
+								errorMessage: error.message,
+							});
+							await notificationService.notifyFailure(
+								`${this.getWorkflowLabel(workflow)} Failed`,
+								`${job.filename}: ${error.message}`,
+							);
+						} catch (handlerError) {
+							console.error(
+								`[ProcessJobUseCase] onError handler failed for ${lockKey}:`,
+								handlerError,
+							);
+						} finally {
+							cleanup();
+						}
+					})();
+				},
+			};
+
+			const process = await commandExecutor.spawn(binary, args, callbacks);
+			jobRepository.appendLog(workflow, job.id, `PID: ${process.pid}`);
+			ProcessRegistry.register(workflow, job.id, process);
+			cleanupOwnedByCallbacks = true;
+		} catch (e) {
+			const wasCancelled = ProcessRegistry.wasCancelled(workflow, job.id);
+			if (wasCancelled) {
+				ProcessRegistry.clearCancelled(workflow, job.id);
+				jobRepository.updateJob(workflow, job.id, {
+					status: "failed",
+					errorMessage: "Cancelled",
+				});
+				jobRepository.appendLog(
+					workflow,
+					job.id,
+					"Cancelled before process start",
+				);
+				return;
+			}
+
 			const errorMessage =
 				e instanceof Error ? e.message : "Failed to spawn process";
 			jobRepository.updateJob(workflow, job.id, {
@@ -250,6 +331,10 @@ export class ProcessJobUseCase {
 				errorMessage,
 			});
 			jobRepository.appendLog(workflow, job.id, `Exception: ${errorMessage}`);
+		} finally {
+			if (!cleanupOwnedByCallbacks) {
+				cleanup();
+			}
 		}
 	}
 

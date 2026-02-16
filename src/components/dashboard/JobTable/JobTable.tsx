@@ -27,9 +27,10 @@ import {
 } from "@/components/ui/select";
 import { useQueueStore } from "@/stores/useQueueStore";
 import type { Job, WorkflowType } from "@/stores/useQueueStore";
+import { useJobDataStore } from "@/stores/useJobDataStore";
 import { ProcessRegistry } from "@/services/ProcessRegistry";
 
-import type { TreeNode } from "./JobTreeBuilder";
+import type { TreeJob, TreeNode } from "./JobTreeBuilder";
 import { buildTree, getAllPaths, findNode } from "./JobTreeBuilder";
 import { FolderRow } from "./FolderRow";
 import { JobRow } from "./JobRow";
@@ -40,18 +41,130 @@ interface JobTableProps {
 	selectedJobId?: string;
 }
 
+type QueueStoreState = ReturnType<typeof useQueueStore.getState>;
+
+interface JobRuntimeSnapshot {
+	status: Job["status"];
+	system: Job["system"];
+	platformOverride: Job["platformOverride"];
+}
+
+interface FolderStats {
+	totalItems: number;
+	pendingInFolder: number;
+	isProcessing: boolean;
+	inferredPlatform?: Job["platformOverride"];
+}
+
+function createQueueTreeIdsSelector(workflow: WorkflowType) {
+	let lastResult: string[] | undefined;
+
+	return (state: QueueStoreState): string[] => {
+		const queue = state.queues[workflow];
+
+		if (lastResult && queue.length === lastResult.length) {
+			let same = true;
+			for (let i = 0; i < queue.length; i++) {
+				const current = queue[i];
+				const previous = lastResult[i];
+				if (current.id !== previous) {
+					same = false;
+					break;
+				}
+			}
+			if (same) {
+				return lastResult;
+			}
+		}
+
+		lastResult = queue.map((job) => job.id);
+		return lastResult;
+	};
+}
+
+function createQueueRuntimeSelector(workflow: WorkflowType) {
+	let lastResult: Record<string, JobRuntimeSnapshot> | undefined;
+	let lastOrder: string[] | undefined;
+
+	return (state: QueueStoreState): Record<string, JobRuntimeSnapshot> => {
+		const queue = state.queues[workflow];
+		const nextOrder = queue.map((job) => job.id);
+
+		if (
+			lastResult &&
+			lastOrder &&
+			lastOrder.length === nextOrder.length &&
+			lastOrder.every((id, index) => id === nextOrder[index])
+		) {
+			let same = true;
+			for (const job of queue) {
+				const previous = lastResult[job.id];
+				if (
+					!previous ||
+					previous.status !== job.status ||
+					previous.system !== job.system ||
+					previous.platformOverride !== job.platformOverride
+				) {
+					same = false;
+					break;
+				}
+			}
+
+			if (same) {
+				return lastResult;
+			}
+		}
+
+		const nextResult: Record<string, JobRuntimeSnapshot> = {};
+		for (const job of queue) {
+			nextResult[job.id] = {
+				status: job.status,
+				system: job.system,
+				platformOverride: job.platformOverride,
+			};
+		}
+
+		lastResult = nextResult;
+		lastOrder = nextOrder;
+		return nextResult;
+	};
+}
+
 export function JobTable({
 	workflow,
 	onSelectJob,
 	selectedJobId,
 }: JobTableProps) {
-	const queue = useQueueStore((state) => state.queues[workflow]);
+	const queueTreeIdsSelector = useMemo(
+		() => createQueueTreeIdsSelector(workflow),
+		[workflow],
+	);
+	const queueRuntimeSelector = useMemo(
+		() => createQueueRuntimeSelector(workflow),
+		[workflow],
+	);
+	const treeJobIds = useQueueStore(queueTreeIdsSelector);
+	const jobRuntimeById = useQueueStore(queueRuntimeSelector);
+	const jobPathsById = useJobDataStore((state) => state.jobDataById);
 	const removeJob = useQueueStore((state) => state.removeJob);
 	const updateJob = useQueueStore((state) => state.updateJob);
 	const requestStart = useQueueStore((state) => state.requestStart);
 
-	const handleStartJob = useCallback(
-		(job: Job) => {
+	const treeJobs = useMemo((): TreeJob[] => {
+		const result: TreeJob[] = [];
+		for (const jobId of treeJobIds) {
+			const path = jobPathsById[jobId]?.path;
+			if (!path) continue;
+			result.push({ id: jobId, path });
+		}
+		return result;
+	}, [jobPathsById, treeJobIds]);
+
+	const handleStartJobById = useCallback(
+		(jobId: string) => {
+			const job = useQueueStore.getState().getJob(workflow, jobId);
+			if (!job) return;
+
 			if (job.status !== "pending" && job.status !== "failed") {
 				return;
 			}
@@ -73,8 +186,11 @@ export function JobTable({
 		[requestStart, updateJob, workflow],
 	);
 
-	const handleRemoveJob = useCallback(
-		async (job: Job) => {
+	const handleRemoveJobById = useCallback(
+		async (jobId: string) => {
+			const job = useQueueStore.getState().getJob(workflow, jobId);
+			if (!job) return;
+
 			if (job.status === "processing") {
 				try {
 					await ProcessRegistry.cancel(workflow, job.id);
@@ -87,29 +203,12 @@ export function JobTable({
 		[removeJob, workflow],
 	);
 
-	// Stable ID-based callback factories for JobRow memoization
-	const handleStartJobById = useCallback(
-		(jobId: string) => {
-			const job = queue.find((j) => j.id === jobId);
-			if (job) handleStartJob(job);
-		},
-		[queue, handleStartJob],
-	);
-
-	const handleRemoveJobById = useCallback(
-		(jobId: string) => {
-			const job = queue.find((j) => j.id === jobId);
-			if (job) handleRemoveJob(job);
-		},
-		[queue, handleRemoveJob],
-	);
-
 	const handleSelectJobById = useCallback(
 		(jobId: string) => {
-			const job = queue.find((j) => j.id === jobId);
+			const job = useQueueStore.getState().getJob(workflow, jobId);
 			if (job) onSelectJob?.(job);
 		},
-		[queue, onSelectJob],
+		[onSelectJob, workflow],
 	);
 
 	const handleUpdatePlatformById = useCallback(
@@ -124,13 +223,41 @@ export function JobTable({
 		[updateJob, workflow],
 	);
 
+	// Filters
+	const [statusFilter, setStatusFilter] = useState<string>("all");
+	const [systemFilter, setSystemFilter] = useState<string>("all");
+	const [folderFilter, setFolderFilter] = useState<string>("all");
+
+	const filteredJobIds = useMemo(() => {
+		const result = new Set<string>();
+		for (const [jobId, runtime] of Object.entries(jobRuntimeById)) {
+			if (statusFilter !== "all" && runtime.status !== statusFilter) {
+				continue;
+			}
+			if (systemFilter !== "all" && runtime.system !== systemFilter) {
+				continue;
+			}
+			result.add(jobId);
+		}
+		return result;
+	}, [jobRuntimeById, statusFilter, systemFilter]);
+
 	const handleStartFolder = useCallback(
 		(node: TreeNode) => {
 			const idsToStart: string[] = [];
 			const collectPendingInNode = (targetNode: TreeNode) => {
 				for (const job of targetNode.jobs) {
-					if (job.status === "pending" || job.status === "failed") {
-						if (job.status === "failed") {
+					if (!filteredJobIds.has(job.id)) {
+						continue;
+					}
+
+					const runtime = jobRuntimeById[job.id];
+					if (!runtime) {
+						continue;
+					}
+
+					if (runtime.status === "pending" || runtime.status === "failed") {
+						if (runtime.status === "failed") {
 							updateJob(workflow, job.id, {
 								status: "pending",
 								progress: 0,
@@ -155,31 +282,127 @@ export function JobTable({
 				requestStart(workflow, jobId);
 			}
 		},
-		[requestStart, updateJob, workflow],
+		[filteredJobIds, jobRuntimeById, requestStart, updateJob, workflow],
 	);
-
-	// Filters
-	const [statusFilter, setStatusFilter] = useState<string>("all");
-	const [systemFilter, setSystemFilter] = useState<string>("all");
-	const [folderFilter, setFolderFilter] = useState<string>("all");
-
-	// Filter jobs
-	const filteredQueue = useMemo(() => {
-		return queue.filter((job) => {
-			if (statusFilter !== "all" && job.status !== statusFilter) return false;
-			if (systemFilter !== "all" && job.system !== systemFilter) return false;
-			return true;
-		});
-	}, [queue, statusFilter, systemFilter]);
 
 	// Get unique systems for filter
 	const uniqueSystems = useMemo(() => {
-		const systems = new Set(queue.map((j) => j.system));
+		const systems = new Set(
+			Object.values(jobRuntimeById).map((runtime) => runtime.system),
+		);
 		return Array.from(systems).sort();
-	}, [queue]);
+	}, [jobRuntimeById]);
 
-	// Build tree from filtered jobs
-	const tree = useMemo(() => buildTree(filteredQueue), [filteredQueue]);
+	// Build tree from structural job data only (id/path).
+	const tree = useMemo(() => buildTree(treeJobs), [treeJobs]);
+
+	const visibleNodeByPath = useMemo(() => {
+		const visibility = new Map<string, boolean>();
+
+		const visit = (node: TreeNode): boolean => {
+			let hasVisibleJobs = node.jobs.some((job) => filteredJobIds.has(job.id));
+
+			for (const child of Object.values(node.children)) {
+				if (visit(child)) {
+					hasVisibleJobs = true;
+				}
+			}
+
+			visibility.set(node.path, hasVisibleJobs);
+			return hasVisibleJobs;
+		};
+
+		visit(tree);
+		return visibility;
+	}, [filteredJobIds, tree]);
+
+	const folderStatsByPath = useMemo(() => {
+		const stats = new Map<string, FolderStats>();
+		const normalizePlatform = (
+			runtime: JobRuntimeSnapshot,
+		): Job["platformOverride"] | undefined => {
+			if (runtime.platformOverride && runtime.platformOverride !== "auto") {
+				return runtime.platformOverride;
+			}
+			const system = runtime.system.toLowerCase();
+			if (
+				[
+					"ps1",
+					"ps2",
+					"psp",
+					"saturn",
+					"dreamcast",
+					"gamecube",
+					"wii",
+				].includes(system)
+			) {
+				return system as Job["platformOverride"];
+			}
+			return undefined;
+		};
+
+		const visit = (
+			node: TreeNode,
+		): {
+			totalItems: number;
+			pendingInFolder: number;
+			isProcessing: boolean;
+			platforms: Set<Job["platformOverride"]>;
+		} => {
+			let totalItems = 0;
+			let pendingInFolder = 0;
+			let isProcessing = false;
+			const platforms = new Set<Job["platformOverride"]>();
+
+			for (const job of node.jobs) {
+				if (!filteredJobIds.has(job.id)) {
+					continue;
+				}
+
+				totalItems += 1;
+				const runtime = jobRuntimeById[job.id];
+				if (!runtime) continue;
+				if (runtime.status === "pending" || runtime.status === "failed") {
+					pendingInFolder += 1;
+				}
+				if (runtime.status === "processing") {
+					isProcessing = true;
+				}
+				const platform = normalizePlatform(runtime);
+				if (platform) {
+					platforms.add(platform);
+				}
+			}
+
+			for (const child of Object.values(node.children)) {
+				const childStats = visit(child);
+				totalItems += childStats.totalItems;
+				pendingInFolder += childStats.pendingInFolder;
+				isProcessing = isProcessing || childStats.isProcessing;
+				childStats.platforms.forEach((platform) => {
+					platforms.add(platform);
+				});
+			}
+
+			stats.set(node.path, {
+				totalItems,
+				pendingInFolder,
+				isProcessing,
+				inferredPlatform:
+					platforms.size === 1 ? Array.from(platforms)[0] : undefined,
+			});
+
+			return {
+				totalItems,
+				pendingInFolder,
+				isProcessing,
+				platforms,
+			};
+		};
+
+		visit(tree);
+		return stats;
+	}, [filteredJobIds, jobRuntimeById, tree]);
 
 	// Top-level folders for tree filter
 	const topLevelFolders = useMemo(() => {
@@ -206,7 +429,12 @@ export function JobTable({
 			// Apply to all jobs in this folder
 			const applyToNode = (node: TreeNode) => {
 				node.jobs.forEach((job) => {
-					if (job.status === "pending") {
+					if (!filteredJobIds.has(job.id)) {
+						return;
+					}
+
+					const runtime = jobRuntimeById[job.id];
+					if (runtime?.status === "pending") {
 						updateJob(workflow, job.id, { platformOverride: platform });
 					}
 				});
@@ -216,7 +444,7 @@ export function JobTable({
 			const targetNode = findNode(tree, path);
 			if (targetNode) applyToNode(targetNode);
 		},
-		[tree, updateJob, workflow],
+		[filteredJobIds, jobRuntimeById, tree, updateJob, workflow],
 	);
 
 	// Check if a job is under a folder with an override
@@ -260,73 +488,39 @@ export function JobTable({
 		setExpandedPaths(expanded);
 	}, [tree]);
 
-	const getNodePlatform = useCallback(
-		(node: TreeNode): Job["platformOverride"] | undefined => {
-			const platforms = new Set<Job["platformOverride"]>();
-			const normalize = (job: Job): Job["platformOverride"] | undefined => {
-				if (job.platformOverride && job.platformOverride !== "auto") {
-					return job.platformOverride;
-				}
-				const system = job.system.toLowerCase();
-				if (
-					[
-						"ps1",
-						"ps2",
-						"psp",
-						"saturn",
-						"dreamcast",
-						"gamecube",
-						"wii",
-					].includes(system)
-				) {
-					return system as Job["platformOverride"];
-				}
-				return undefined;
-			};
-
-			const visit = (current: TreeNode) => {
-				current.jobs.forEach((job) => {
-					const platform = normalize(job);
-					if (platform) platforms.add(platform);
-				});
-				Object.values(current.children).forEach(visit);
-			};
-
-			visit(node);
-			if (platforms.size === 1) return Array.from(platforms)[0];
-			return undefined;
-		},
-		[],
-	);
-
 	// Remove all jobs in a folder
 	const handleRemoveFolder = useCallback(
 		async (node: TreeNode) => {
-			const jobsToRemove: string[] = [];
+			const jobsToRemove: TreeJob[] = [];
 
-			// Recursive function to collect all job IDs
-			const collectJobIds = (n: TreeNode) => {
-				n.jobs.forEach((job) => jobsToRemove.push(job.id));
-				Object.values(n.children).forEach(collectJobIds);
+			// Recursive function to collect all jobs
+			const collectJobs = (n: TreeNode) => {
+				jobsToRemove.push(...n.jobs);
+				Object.values(n.children).forEach(collectJobs);
 			};
 
-			collectJobIds(node);
+			collectJobs(node);
 
 			// Cancel any active jobs first
-			for (const jobId of jobsToRemove) {
-				const job = queue.find((j) => j.id === jobId);
-				if (job && job.status === "processing") {
+			for (const job of jobsToRemove) {
+				if (!filteredJobIds.has(job.id)) {
+					continue;
+				}
+
+				const runtime = jobRuntimeById[job.id];
+				if (runtime?.status === "processing") {
 					try {
-						await ProcessRegistry.cancel(workflow, jobId);
+						await ProcessRegistry.cancel(workflow, job.id);
 					} catch (e) {
-						console.warn(`Failed to cancel job ${jobId}`, e);
+						console.warn(`Failed to cancel job ${job.id}`, e);
 					}
 				}
+
 				// Remove from store
-				removeJob(workflow, jobId);
+				removeJob(workflow, job.id);
 			}
 		},
-		[queue, workflow, removeJob],
+		[filteredJobIds, jobRuntimeById, workflow, removeJob],
 	);
 
 	// Recursive render function using extracted components
@@ -334,9 +528,13 @@ export function JobTable({
 		(node: TreeNode, depth: number = 0): React.ReactNode[] => {
 			const result: React.ReactNode[] = [];
 			const isExpanded = expandedPaths[node.path] ?? true;
-			const hasContent =
-				node.jobs.length > 0 || Object.keys(node.children).length > 0;
-			const inferredPlatform = getNodePlatform(node);
+			const hasContent = visibleNodeByPath.get(node.path) ?? false;
+			if (!hasContent) {
+				return result;
+			}
+
+			const stats = folderStatsByPath.get(node.path);
+			const inferredPlatform = stats?.inferredPlatform;
 
 			// Render folder row (skip root)
 			if (node.path && hasContent) {
@@ -346,6 +544,9 @@ export function JobTable({
 						node={node}
 						depth={depth}
 						isExpanded={isExpanded}
+						totalItems={stats?.totalItems ?? 0}
+						pendingInFolder={stats?.pendingInFolder ?? 0}
+						isProcessing={stats?.isProcessing ?? false}
 						folderOverride={folderOverrides[node.path]}
 						inferredPlatform={inferredPlatform}
 						onToggle={() => togglePath(node.path)}
@@ -360,17 +561,22 @@ export function JobTable({
 			if (isExpanded || !node.path) {
 				const childKeys = Object.keys(node.children).sort();
 				for (const key of childKeys) {
-					result.push(
-						...renderNode(node.children[key], node.path ? depth + 1 : depth),
-					);
+					const childNode = node.children[key];
+					if (!(visibleNodeByPath.get(childNode.path) ?? false)) {
+						continue;
+					}
+					result.push(...renderNode(childNode, node.path ? depth + 1 : depth));
 				}
 
 				for (const job of node.jobs) {
+					if (!filteredJobIds.has(job.id)) {
+						continue;
+					}
 					const jobDepth = node.path ? depth + 1 : depth;
 					result.push(
 						<JobRow
 							key={job.id}
-							job={job}
+							jobId={job.id}
 							workflow={workflow}
 							depth={jobDepth}
 							isSelected={selectedJobId === job.id}
@@ -388,10 +594,12 @@ export function JobTable({
 		},
 		[
 			expandedPaths,
+			filteredJobIds,
 			folderOverrides,
-			getNodePlatform,
+			folderStatsByPath,
 			handleStartFolder,
 			getFolderOverrideForJob,
+			visibleNodeByPath,
 			selectedJobId,
 			setFolderPlatform,
 			togglePath,
@@ -400,6 +608,7 @@ export function JobTable({
 			handleSelectJobById,
 			handleStartJobById,
 			handleRemoveJobById,
+			handleRemoveFolder,
 			handleUpdatePlatformById,
 		],
 	);
@@ -408,6 +617,10 @@ export function JobTable({
 		if (folderFilter === "all") return tree;
 		return findNode(tree, folderFilter) ?? tree;
 	}, [folderFilter, tree]);
+
+	const hasVisibleJobsInView = useMemo(() => {
+		return visibleNodeByPath.get(filteredRoot.path) ?? false;
+	}, [filteredRoot.path, visibleNodeByPath]);
 
 	return (
 		<div className="space-y-2 flex flex-col h-full min-h-0">
@@ -484,13 +697,13 @@ export function JobTable({
 						</TableRow>
 					</TableHeader>
 					<TableBody>
-						{filteredQueue.length === 0 ? (
+						{!hasVisibleJobsInView ? (
 							<TableRow>
 								<TableCell
 									colSpan={7}
 									className="h-24 text-center text-muted-foreground"
 								>
-									{queue.length === 0
+									{treeJobs.length === 0
 										? "No jobs in queue."
 										: "No jobs match filter."}
 								</TableCell>

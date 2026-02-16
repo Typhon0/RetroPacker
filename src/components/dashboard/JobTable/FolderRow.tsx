@@ -27,16 +27,14 @@ import {
 } from "lucide-react";
 import type { Job } from "@/stores/useQueueStore";
 import type { TreeNode } from "./JobTreeBuilder";
-import {
-	countItems,
-	countPending,
-	isFolderProcessing,
-} from "./JobTreeBuilder";
 
 interface FolderRowProps {
 	node: TreeNode;
 	depth: number;
 	isExpanded: boolean;
+	totalItems: number;
+	pendingInFolder: number;
+	isProcessing: boolean;
 	folderOverride?: Job["platformOverride"];
 	inferredPlatform?: Job["platformOverride"];
 	onToggle: () => void;
@@ -52,6 +50,9 @@ export function FolderRow({
 	node,
 	depth,
 	isExpanded,
+	totalItems,
+	pendingInFolder,
+	isProcessing,
 	folderOverride,
 	inferredPlatform,
 	onToggle,
@@ -59,9 +60,6 @@ export function FolderRow({
 	onSetPlatform,
 	onRemove,
 }: FolderRowProps): React.ReactElement {
-	const totalItems = countItems(node);
-	const pendingInFolder = countPending(node);
-	const isProcessing = isFolderProcessing(node);
 	const currentValue = folderOverride || inferredPlatform || "auto";
 
 	return (

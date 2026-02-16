@@ -7,7 +7,10 @@
  * @module components/dashboard/JobTable/JobTreeBuilder
  */
 
-import type { Job } from "@/stores/useQueueStore";
+export interface TreeJob {
+	id: string;
+	path: string;
+}
 
 /**
  * Tree node structure for organizing jobs by folder.
@@ -15,7 +18,7 @@ import type { Job } from "@/stores/useQueueStore";
 export interface TreeNode {
 	name: string;
 	path: string;
-	jobs: Job[];
+	jobs: TreeJob[];
 	children: Record<string, TreeNode>;
 }
 
@@ -23,7 +26,7 @@ export interface TreeNode {
  * Find the common path prefix across all jobs.
  * Used to skip redundant root folders.
  */
-export function findCommonPrefix(jobs: Job[]): string[] {
+export function findCommonPrefix(jobs: TreeJob[]): string[] {
 	if (jobs.length === 0) return [];
 
 	const paths = jobs.map((job) => {
@@ -54,7 +57,7 @@ export function findCommonPrefix(jobs: Job[]): string[] {
  * Build a tree structure from a list of jobs.
  * Groups jobs by their folder hierarchy.
  */
-export function buildTree(jobs: Job[]): TreeNode {
+export function buildTree(jobs: TreeJob[]): TreeNode {
 	const root: TreeNode = { name: "Root", path: "", jobs: [], children: {} };
 
 	// Find common prefix to skip (keep the last segment so root folder is visible)
@@ -116,19 +119,6 @@ export function countItems(node: TreeNode): number {
 }
 
 /**
- * Count pending/failed items in the tree recursively.
- */
-export function countPending(node: TreeNode): number {
-	let count = node.jobs.filter(
-		(j) => j.status === "pending" || j.status === "failed",
-	).length;
-	for (const child of Object.values(node.children)) {
-		count += countPending(child);
-	}
-	return count;
-}
-
-/**
  * Find a node by path in the tree.
  */
 export function findNode(node: TreeNode, targetPath: string): TreeNode | null {
@@ -138,15 +128,4 @@ export function findNode(node: TreeNode, targetPath: string): TreeNode | null {
 		if (found) return found;
 	}
 	return null;
-}
-
-/**
- * Check if a folder (or any subfolder) has processing jobs.
- */
-export function isFolderProcessing(node: TreeNode): boolean {
-	if (node.jobs.some((j) => j.status === "processing")) return true;
-	for (const child of Object.values(node.children)) {
-		if (isFolderProcessing(child)) return true;
-	}
-	return false;
 }

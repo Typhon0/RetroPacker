@@ -3,6 +3,7 @@ import { Job } from "@/stores/useQueueStore";
 import { cn } from "@/lib/utils";
 import { X, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { EMPTY_JOB_LOGS, useJobLogStore } from "@/stores/useJobLogStore";
 
 interface TerminalDrawerProps {
 	job?: Job;
@@ -20,8 +21,13 @@ export function TerminalDrawer({ job, isOpen, onClose }: TerminalDrawerProps) {
 	const isAtBottomRef = useRef(true);
 	const [scrollTop, setScrollTop] = useState(0);
 	const [viewportHeight, setViewportHeight] = useState(0);
+	const selectedJobId = job?.id;
 
-	const outputLog = job?.outputLog ?? [];
+	const outputLog = useJobLogStore((state) =>
+		selectedJobId
+			? (state.logsByJobId[selectedJobId] ?? EMPTY_JOB_LOGS)
+			: EMPTY_JOB_LOGS,
+	);
 	const totalLines = outputLog.length;
 
 	const visibleWindow = useMemo(() => {

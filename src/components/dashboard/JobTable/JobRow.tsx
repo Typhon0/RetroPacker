@@ -28,11 +28,12 @@ import {
 	Trash2,
 } from "lucide-react";
 import { cn, formatDuration } from "@/lib/utils";
+import { useQueueStore } from "@/stores/useQueueStore";
 import type { Job, WorkflowType } from "@/stores/useQueueStore";
 import { CoverThumbnail } from "../CoverThumbnail";
 
 interface JobRowProps {
-	job: Job;
+	jobId: string;
 	workflow: WorkflowType;
 	depth: number;
 	isSelected: boolean;
@@ -80,7 +81,8 @@ function formatSize(bytes: number): string {
  * Uses ID-based callbacks to ensure stable prop references.
  */
 const JobRowComponent = ({
-	job,
+	jobId,
+	workflow,
 	depth,
 	isSelected,
 	folderOverride,
@@ -88,7 +90,14 @@ const JobRowComponent = ({
 	onStart,
 	onRemove,
 	onUpdatePlatform,
-}: JobRowProps): React.ReactElement => {
+}: JobRowProps): React.ReactElement | null => {
+	const job = useQueueStore((state) =>
+		state.queues[workflow].find((candidate) => candidate.id === jobId),
+	);
+	if (!job) {
+		return null;
+	}
+
 	const isDisabled = !!folderOverride;
 	const displayValue = job.platformOverride || job.system.toLowerCase();
 	const isProcessing = job.status === "processing";
@@ -138,10 +147,10 @@ const JobRowComponent = ({
 								"gamecube",
 								"wii",
 							].includes(job.system.toLowerCase()) && (
-									<SelectItem value={job.system.toLowerCase()}>
-										{job.system}
-									</SelectItem>
-								)}
+								<SelectItem value={job.system.toLowerCase()}>
+									{job.system}
+								</SelectItem>
+							)}
 							<SelectItem value="ps1">PS1</SelectItem>
 							<SelectItem value="ps2">PS2</SelectItem>
 							<SelectItem value="psp">PSP</SelectItem>

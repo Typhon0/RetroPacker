@@ -151,17 +151,21 @@ export function clearWorkflowCancellation(workflow: WorkflowType): void {
  * Internal helper to terminate a process safely with timeout.
  */
 async function terminateProcess(process: SpawnedProcess): Promise<void> {
-	const withTimeout = async (promise: Promise<void>, label: string) => {
+	const withTimeout = async (
+		operation: () => Promise<void>,
+		label: string,
+		timeoutMs: number,
+	) => {
 		let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
 		const timeoutPromise = new Promise<void>((_, reject) => {
 			timeoutId = setTimeout(() => {
 				reject(new Error(`${label} timed out`));
-			}, 2000);
+			}, timeoutMs);
 		});
 
 		try {
-			await Promise.race([promise, timeoutPromise]);
+			await Promise.race([operation(), timeoutPromise]);
 		} finally {
 			if (timeoutId) {
 				clearTimeout(timeoutId);
@@ -169,19 +173,45 @@ async function terminateProcess(process: SpawnedProcess): Promise<void> {
 		}
 	};
 
+	const sleep = (ms: number): Promise<void> =>
+		new Promise((resolve) => {
+			setTimeout(resolve, ms);
+		});
+
+	const isTimeoutError = (error: unknown, label: string): boolean => {
+		return error instanceof Error && error.message === `${label} timed out`;
+	};
+
+	const KILL_TIMEOUT_MS = 2000;
+	const FORCE_KILL_GRACE_MS = 250;
+	const primaryKillLabel = "Primary kill";
+
 	// 1. Primary Polite Kill
 	try {
-		await withTimeout(process.kill(), "Primary kill");
-	} catch {
-		// Ignore failures, proceed to force kill
+		await withTimeout(() => process.kill(), primaryKillLabel, KILL_TIMEOUT_MS);
+		return;
+	} catch (error) {
+		// If the kill request failed quickly, avoid force-killing by PID.
+		// A reused PID is more dangerous than a best-effort polite shutdown.
+		if (!isTimeoutError(error, primaryKillLabel)) {
+			return;
+		}
 	}
 
 	const pid = process.pid;
 	if (!pid || !commandExecutor) return;
+	const executor = commandExecutor;
+
+	// Give the OS/plugin a moment to release process handles before escalating.
+	await sleep(FORCE_KILL_GRACE_MS);
 
 	// 2. Force Kill via injected command executor
 	try {
-		await withTimeout(commandExecutor.forceKillProcess(pid), "Force kill");
+		await withTimeout(
+			() => executor.forceKillProcess(pid),
+			"Force kill",
+			KILL_TIMEOUT_MS,
+		);
 	} catch {
 		// Final fallback: ignore
 	}

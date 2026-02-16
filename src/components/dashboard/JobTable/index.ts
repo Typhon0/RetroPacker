@@ -12,7 +12,6 @@ export {
 	buildTree,
 	getAllPaths,
 	countItems,
-	countPending,
 	findNode,
 	findCommonPrefix,
 } from "./JobTreeBuilder";

@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { useQueueStore, WorkflowType, Job } from "../stores/useQueueStore";
+import { useQueueStore, WorkflowType } from "../stores/useQueueStore";
 import { usePackerStore } from "../stores/usePackerStore";
 import { useRepositories } from "../presentation/context/RepositoryContext";
 import { ProcessJobUseCase } from "../domain/usecases/ProcessJobUseCase";
@@ -10,7 +10,27 @@ import { useShallow } from "zustand/react/shallow";
  * Now refactored to use Clean Architecture Use Case.
  */
 export function useQueueProcessor(workflow: WorkflowType) {
-	const queue = useQueueStore((state) => state.queues[workflow]);
+	const queueSignal = useQueueStore(
+		useShallow((state) => {
+			const queue = state.queues[workflow];
+			let pendingCount = 0;
+			let processingCount = 0;
+			for (const job of queue) {
+				if (job.status === "pending") {
+					pendingCount += 1;
+					continue;
+				}
+				if (job.status === "processing") {
+					processingCount += 1;
+				}
+			}
+			return {
+				queueLength: queue.length,
+				pendingCount,
+				processingCount,
+			};
+		}),
+	);
 	const isProcessing = useQueueStore((state) => state.isProcessing[workflow]);
 	const startRequests = useQueueStore((state) => state.startRequests[workflow]);
 	const consumeStartRequest = useQueueStore(
@@ -40,12 +60,16 @@ export function useQueueProcessor(workflow: WorkflowType) {
 
 	useEffect(() => {
 		const processQueue = async () => {
+			const { queues, startRequests: allStartRequests } =
+				useQueueStore.getState();
+			const queue = queues[workflow];
+			const latestStartRequests = allStartRequests[workflow];
 			const processingCount = queue.filter(
-				(j: Job) => j.status === "processing",
+				(job) => job.status === "processing",
 			).length;
-			let nextRequestedJob: Job | undefined;
-			for (const requestedId of startRequests) {
-				const candidate = queue.find((j: Job) => j.id === requestedId);
+			let nextRequestedJob = undefined as (typeof queue)[number] | undefined;
+			for (const requestedId of latestStartRequests) {
+				const candidate = queue.find((job) => job.id === requestedId);
 				if (candidate?.status === "pending") {
 					nextRequestedJob = candidate;
 					break;
@@ -54,16 +78,16 @@ export function useQueueProcessor(workflow: WorkflowType) {
 			}
 
 			const nextQueuedJob = isProcessing
-				? queue.find((j: Job) => j.status === "pending")
+				? queue.find((job) => job.status === "pending")
 				: undefined;
-			const nextJob = nextRequestedJob ?? nextQueuedJob;
+			const nextJobState = nextRequestedJob ?? nextQueuedJob;
 
 			const canDispatch =
 				processingCount < concurrency &&
-				(isProcessing || startRequests.length > 0) &&
-				!!nextJob;
+				(isProcessing || latestStartRequests.length > 0) &&
+				!!nextJobState;
 
-			if (!canDispatch || !nextJob) {
+			if (!canDispatch || !nextJobState) {
 				return;
 			}
 
@@ -72,6 +96,18 @@ export function useQueueProcessor(workflow: WorkflowType) {
 			}
 
 			try {
+				const nextJob = repositories.jobRepository.getJob(
+					workflow,
+					nextJobState.id,
+				);
+				if (!nextJob) {
+					useQueueStore.getState().updateJob(workflow, nextJobState.id, {
+						status: "failed",
+						errorMessage: "Missing job metadata",
+					});
+					return;
+				}
+
 				const outputDir = settings.outputDirectory
 					? settings.outputDirectory
 					: await repositories.fileSystem.dirname(nextJob.path);
@@ -90,7 +126,7 @@ export function useQueueProcessor(workflow: WorkflowType) {
 					});
 			} catch (e) {
 				console.error("Failed to start job", e);
-				useQueueStore.getState().updateJob(workflow, nextJob.id, {
+				useQueueStore.getState().updateJob(workflow, nextJobState.id, {
 					status: "failed",
 					errorMessage: "Could not determine output path or start job",
 				});
@@ -99,7 +135,9 @@ export function useQueueProcessor(workflow: WorkflowType) {
 
 		processQueue();
 	}, [
-		queue,
+		queueSignal.queueLength,
+		queueSignal.pendingCount,
+		queueSignal.processingCount,
 		startRequests,
 		consumeStartRequest,
 		concurrency,
