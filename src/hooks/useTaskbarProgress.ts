@@ -14,6 +14,11 @@ export function useTaskbarProgress() {
 	const isProcessingMap = useQueueStore((state) => state.isProcessing);
 	const lastUpdateRef = useRef(0);
 	const pendingUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const lastPayloadRef = useRef<
+		| { status: ProgressBarStatus.None }
+		| { status: ProgressBarStatus.Normal; progress: number }
+		| null
+	>(null);
 
 	useEffect(() => {
 		const updateProgress = async () => {
@@ -36,27 +41,41 @@ export function useTaskbarProgress() {
 			lastUpdateRef.current = now;
 			const window = getCurrentWindow();
 			const anyProcessing = Object.values(isProcessingMap).some(Boolean);
+			let nextPayload:
+				| { status: ProgressBarStatus.None }
+				| { status: ProgressBarStatus.Normal; progress: number };
 
 			if (!anyProcessing || globalSummary.total === 0) {
-				await window.setProgressBar({
+				nextPayload = {
 					status: ProgressBarStatus.None,
-				});
+				};
+			} else if (globalSummary.processing === 0 && globalSummary.completed === 0) {
+				nextPayload = {
+					status: ProgressBarStatus.None,
+				};
+			} else {
+				nextPayload = {
+					status: ProgressBarStatus.Normal,
+					progress: Math.round(
+						Math.min(100, Math.max(0, globalSummary.overallProgress)),
+					),
+				};
+			}
+
+			const lastPayload = lastPayloadRef.current;
+			const isUnchanged =
+				!!lastPayload &&
+				lastPayload.status === nextPayload.status &&
+				(nextPayload.status !== ProgressBarStatus.Normal ||
+					(lastPayload.status === ProgressBarStatus.Normal &&
+						lastPayload.progress === nextPayload.progress));
+
+			if (isUnchanged) {
 				return;
 			}
 
-			if (globalSummary.processing === 0 && globalSummary.completed === 0) {
-				await window.setProgressBar({
-					status: ProgressBarStatus.None,
-				});
-				return;
-			}
-
-			await window.setProgressBar({
-				status: ProgressBarStatus.Normal,
-				progress: Math.round(
-					Math.min(100, Math.max(0, globalSummary.overallProgress)),
-				),
-			});
+			await window.setProgressBar(nextPayload);
+			lastPayloadRef.current = nextPayload;
 		};
 
 		updateProgress().catch(console.error);

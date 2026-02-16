@@ -53,6 +53,8 @@ export interface ProcessJobSettings {
 export class ProcessJobUseCase {
 	// Static lock to prevent double-spawning the same job
 	private static readonly spawnLock = new Set<string>();
+	private static readonly MIN_PROGRESS_DELTA_PERCENT = 0.25;
+	private static readonly PROGRESS_UPDATE_MIN_INTERVAL_MS = 150;
 
 	constructor(private readonly deps: ProcessJobDependencies) {}
 
@@ -134,6 +136,7 @@ export class ProcessJobUseCase {
 			job.setErrorMessage(undefined);
 			job.setStartTime(Date.now());
 			job.setEtaSeconds(undefined);
+			const emitProgress = this.createProgressEmitter(job);
 
 			// Determine which tool to use
 			const usesDolphin = this.shouldUseDolphin(job);
@@ -153,14 +156,14 @@ export class ProcessJobUseCase {
 
 			// Set up progress simulation for DolphinTool (doesn't output progress)
 			if (usesDolphin) {
-				progressInterval = this.startProgressSimulation(job);
+				progressInterval = this.startProgressSimulation(job, emitProgress);
 			}
 
 			const callbacks: CommandCallbacks = {
 				onStdout: (line) => {
 					job.appendLog(line);
 					if (!usesDolphin) {
-						this.parseProgress(line, job);
+						this.parseProgress(line, job, emitProgress);
 					} else if (workflow === "info") {
 						this.parseDolphinInfo(line, job);
 					}
@@ -168,7 +171,7 @@ export class ProcessJobUseCase {
 				onStderr: (line) => {
 					job.appendLog(`[stderr] ${line}`);
 					if (!usesDolphin) {
-						this.parseProgress(line, job);
+						this.parseProgress(line, job, emitProgress);
 					}
 				},
 				onClose: (result) => {
@@ -568,7 +571,11 @@ export class ProcessJobUseCase {
 	/**
 	 * Parse progress from chdman output.
 	 */
-	private parseProgress(line: string, job: JobState): void {
+	private parseProgress(
+		line: string,
+		job: JobState,
+		emitProgress: (progress: number, etaSeconds?: number) => void,
+	): void {
 		const match = line.match(
 			/(?:Compressing|Extracting|Processing),\s+(\d+\.?\d*)%\s+complete/,
 		);
@@ -583,7 +590,7 @@ export class ProcessJobUseCase {
 				etaSeconds = Math.max(0, totalEst - elapsedSeconds);
 			}
 
-			job.updateProgress(percentage, etaSeconds);
+			emitProgress(percentage, etaSeconds);
 		}
 	}
 
@@ -623,27 +630,56 @@ export class ProcessJobUseCase {
 	/**
 	 * Start simulated progress for DolphinTool.
 	 */
-	private startProgressSimulation(job: JobState): ReturnType<typeof setInterval> {
+	private startProgressSimulation(
+		job: JobState,
+		emitProgress: (progress: number, etaSeconds?: number) => void,
+	): ReturnType<typeof setInterval> {
 		const mbSize = job.originalSize / (1024 * 1024);
 		const estSeconds = Math.max(10, mbSize / 4); // 4MB/s estimate
 		const incrementPerSec = 100 / estSeconds;
+		let simulatedProgress = job.progress.value;
 
 		return setInterval(() => {
 			if (job.status.value !== "processing") {
 				return;
 			}
 
-			const newProgress = Math.min(
-				99,
-				job.progress.value + incrementPerSec / 2,
-			);
-			if (newProgress > job.progress.value) {
-				job.updateProgress(
-					newProgress,
-					Math.max(0, estSeconds - (newProgress / 100) * estSeconds),
+			simulatedProgress = Math.min(99, simulatedProgress + incrementPerSec / 2);
+			if (simulatedProgress > job.progress.value) {
+				emitProgress(
+					simulatedProgress,
+					Math.max(0, estSeconds - (simulatedProgress / 100) * estSeconds),
 				);
 			}
 		}, 500);
+	}
+
+	private createProgressEmitter(
+		job: JobState,
+	): (progress: number, etaSeconds?: number, force?: boolean) => void {
+		let lastProgress = job.progress.value;
+		let lastEmitAt = Date.now();
+
+		return (progress, etaSeconds, force = false) => {
+			const clamped = Math.max(0, Math.min(100, progress));
+			const nextProgress = force ? clamped : Math.max(clamped, lastProgress);
+			const now = Date.now();
+			const delta = nextProgress - lastProgress;
+			const elapsed = now - lastEmitAt;
+			const hasEtaUpdate = etaSeconds !== undefined;
+
+			const shouldEmit =
+				force ||
+				delta >= ProcessJobUseCase.MIN_PROGRESS_DELTA_PERCENT ||
+				elapsed >= ProcessJobUseCase.PROGRESS_UPDATE_MIN_INTERVAL_MS;
+
+			if (!shouldEmit) return;
+			if (!force && delta === 0 && !hasEtaUpdate) return;
+
+			job.updateProgress(nextProgress, etaSeconds);
+			lastProgress = nextProgress;
+			lastEmitAt = now;
+		};
 	}
 
 	/**

@@ -9,6 +9,8 @@ import type {
 } from "@/domain/types/workflow.types";
 
 const MAX_LOG_LINES_PER_JOB = 2000;
+const LOG_FLUSH_INTERVAL_MS = 200;
+const LOG_BATCH_SIZE = 20;
 
 /**
  * Active in-memory job entity backed by fine-grained signals.
@@ -43,6 +45,9 @@ export class JobState {
 
 	readonly isProcessing: ReadonlySignal<boolean>;
 	readonly isFailed: ReadonlySignal<boolean>;
+
+	private logBuffer: string[] = [];
+	private flushTimer: ReturnType<typeof setTimeout> | undefined;
 
 	constructor(workflow: WorkflowType, props: JobProps) {
 		this.workflow = workflow;
@@ -98,20 +103,26 @@ export class JobState {
 	}
 
 	appendLog(line: string): void {
-		this.appendLogs([line]);
+		this.logBuffer.push(line);
+		if (this.logBuffer.length >= LOG_BATCH_SIZE) {
+			this.flushBufferedLogs();
+			return;
+		}
+		this.scheduleBufferedFlush();
 	}
 
 	appendLogs(lines: readonly string[]): void {
 		if (lines.length === 0) return;
-		const next = [...this.outputLog.value, ...lines];
-		if (next.length > MAX_LOG_LINES_PER_JOB) {
-			this.outputLog.value = next.slice(-MAX_LOG_LINES_PER_JOB);
+		this.logBuffer.push(...lines);
+		if (this.logBuffer.length >= LOG_BATCH_SIZE) {
+			this.flushBufferedLogs();
 			return;
 		}
-		this.outputLog.value = next;
+		this.scheduleBufferedFlush();
 	}
 
 	clearLogs(): void {
+		this.clearBufferedLogs();
 		if (this.outputLog.value.length === 0) return;
 		this.outputLog.value = [];
 	}
@@ -139,6 +150,7 @@ export class JobState {
 			this.compressedSize.value = updates.compressedSize;
 		}
 		if ("outputLog" in updates && Array.isArray(updates.outputLog)) {
+			this.clearBufferedLogs();
 			this.outputLog.value = updates.outputLog.slice(-MAX_LOG_LINES_PER_JOB);
 		}
 		if ("errorMessage" in updates) {
@@ -163,6 +175,11 @@ export class JobState {
 	}
 
 	toJobProps(): JobProps {
+		const logs =
+			this.logBuffer.length > 0
+				? [...this.outputLog.value, ...this.logBuffer].slice(-MAX_LOG_LINES_PER_JOB)
+				: this.outputLog.value;
+
 		return {
 			id: this.id,
 			filename: this.filename,
@@ -172,7 +189,7 @@ export class JobState {
 			progress: this.progress.value,
 			originalSize: this.originalSize,
 			compressedSize: this.compressedSize.value,
-			outputLog: this.outputLog.value,
+			outputLog: logs,
 			errorMessage: this.errorMessage.value,
 			strategy: this.strategy,
 			startTime: this.startTime.value,
@@ -186,5 +203,39 @@ export class JobState {
 			gameTitle: this.gameTitle.value,
 			region: this.region.value,
 		};
+	}
+
+	dispose(): void {
+		this.clearBufferedLogs();
+	}
+
+	flushBufferedLogs(): void {
+		this.clearFlushTimer();
+		if (this.logBuffer.length === 0) return;
+
+		const next = [...this.outputLog.value, ...this.logBuffer];
+		this.logBuffer = [];
+		this.outputLog.value =
+			next.length > MAX_LOG_LINES_PER_JOB
+				? next.slice(-MAX_LOG_LINES_PER_JOB)
+				: next;
+	}
+
+	private scheduleBufferedFlush(): void {
+		if (this.flushTimer) return;
+		this.flushTimer = setTimeout(() => {
+			this.flushBufferedLogs();
+		}, LOG_FLUSH_INTERVAL_MS);
+	}
+
+	private clearBufferedLogs(): void {
+		this.clearFlushTimer();
+		this.logBuffer = [];
+	}
+
+	private clearFlushTimer(): void {
+		if (!this.flushTimer) return;
+		clearTimeout(this.flushTimer);
+		this.flushTimer = undefined;
 	}
 }

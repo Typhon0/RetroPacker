@@ -181,15 +181,27 @@ class JobStore {
 	}
 
 	removeJob(workflow: WorkflowType, id: string): void {
-		this.jobsSignal.value = this.jobsSignal.value.filter((job) => {
-			return !(job.workflow === workflow && job.id === id);
-		});
+		const remaining: JobState[] = [];
+		for (const job of this.jobsSignal.value) {
+			if (job.workflow === workflow && job.id === id) {
+				job.dispose();
+				continue;
+			}
+			remaining.push(job);
+		}
+		this.jobsSignal.value = remaining;
 	}
 
 	clearQueue(workflow: WorkflowType): void {
-		this.jobsSignal.value = this.jobsSignal.value.filter(
-			(job) => job.workflow !== workflow,
-		);
+		const remaining: JobState[] = [];
+		for (const job of this.jobsSignal.value) {
+			if (job.workflow === workflow) {
+				job.dispose();
+				continue;
+			}
+			remaining.push(job);
+		}
+		this.jobsSignal.value = remaining;
 	}
 
 	updateJob(workflow: WorkflowType, id: string, updates: Partial<JobProps>): void {

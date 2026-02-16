@@ -4,7 +4,14 @@
  * @module components/dashboard/JobTable/JobTable
  */
 
-import { type ReactNode, useState, useMemo, useCallback } from "react";
+import {
+	type ReactNode,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import {
 	Table,
 	TableBody,
@@ -31,7 +38,7 @@ import { jobStore } from "@/stores/JobStore";
 import { useSignalValue } from "@/hooks/useSignalValue";
 
 import type { TreeJob, TreeNode } from "./JobTreeBuilder";
-import { buildTree, getAllPaths, findNode } from "./JobTreeBuilder";
+import { buildTree, findNode, getAllPaths } from "./JobTreeBuilder";
 import { FolderRow } from "./FolderRow";
 import { JobRow } from "./JobRow";
 
@@ -52,6 +59,58 @@ interface FolderStats {
 	pendingInFolder: number;
 	isProcessing: boolean;
 	inferredPlatform?: Platform;
+}
+
+interface FlatFolderRow {
+	kind: "folder";
+	key: string;
+	node: TreeNode;
+	depth: number;
+	totalItems: number;
+	pendingInFolder: number;
+	isProcessing: boolean;
+	inferredPlatform?: Platform;
+	folderOverride?: Platform;
+	height: number;
+}
+
+interface FlatJobRow {
+	kind: "job";
+	key: string;
+	job: JobState;
+	depth: number;
+	folderOverride?: Platform;
+	height: number;
+}
+
+type FlatRow = FlatFolderRow | FlatJobRow;
+
+const JOB_ROW_HEIGHT_PX = 56;
+const FOLDER_ROW_HEIGHT_PX = 44;
+const VIRTUAL_OVERSCAN_ROWS = 10;
+const VIRTUALIZE_AFTER_ROWS = 120;
+
+function findRowIndexByOffset(offset: number, cumulativeHeights: readonly number[]): number {
+	const rowCount = cumulativeHeights.length - 1;
+	if (rowCount <= 0) return 0;
+	if (offset <= 0) return 0;
+
+	const totalHeight = cumulativeHeights[rowCount];
+	if (offset >= totalHeight) return rowCount - 1;
+
+	let low = 0;
+	let high = rowCount;
+
+	while (low < high) {
+		const mid = Math.floor((low + high) / 2);
+		if (cumulativeHeights[mid + 1] <= offset) {
+			low = mid + 1;
+		} else {
+			high = mid;
+		}
+	}
+
+	return low;
 }
 
 export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps) {
@@ -426,36 +485,38 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 		[filteredJobIds, jobRuntimeById, workflow, removeJob],
 	);
 
-	const renderNode = useCallback(
-		(node: TreeNode, depth: number = 0): ReactNode[] => {
-			const result: ReactNode[] = [];
-			const isExpanded = expandedPaths[node.path] ?? true;
+	const filteredRoot = useMemo(() => {
+		if (folderFilter === "all") return tree;
+		return findNode(tree, folderFilter) ?? tree;
+	}, [folderFilter, tree]);
+
+	const hasVisibleJobsInView = useMemo(() => {
+		return visibleNodeByPath.get(filteredRoot.path) ?? false;
+	}, [filteredRoot.path, visibleNodeByPath]);
+
+	const rows = useMemo((): FlatRow[] => {
+		const result: FlatRow[] = [];
+
+		const walk = (node: TreeNode, depth: number = 0) => {
 			const hasContent = visibleNodeByPath.get(node.path) ?? false;
-			if (!hasContent) {
-				return result;
-			}
+			if (!hasContent) return;
 
+			const isExpanded = expandedPaths[node.path] ?? true;
 			const stats = folderStatsByPath.get(node.path);
-			const inferredPlatform = stats?.inferredPlatform;
 
-			if (node.path && hasContent) {
-				result.push(
-					<FolderRow
-						key={`folder-${node.path}`}
-						node={node}
-						depth={depth}
-						isExpanded={isExpanded}
-						totalItems={stats?.totalItems ?? 0}
-						pendingInFolder={stats?.pendingInFolder ?? 0}
-						isProcessing={stats?.isProcessing ?? false}
-						folderOverride={folderOverrides[node.path]}
-						inferredPlatform={inferredPlatform}
-						onToggle={() => togglePath(node.path)}
-						onStartFolder={() => handleStartFolder(node)}
-						onSetPlatform={(platform) => setFolderPlatform(node.path, platform)}
-						onRemove={() => handleRemoveFolder(node)}
-					/>,
-				);
+			if (node.path) {
+				result.push({
+					kind: "folder",
+					key: `folder-${node.path}`,
+					node,
+					depth,
+					totalItems: stats?.totalItems ?? 0,
+					pendingInFolder: stats?.pendingInFolder ?? 0,
+					isProcessing: stats?.isProcessing ?? false,
+					inferredPlatform: stats?.inferredPlatform,
+					folderOverride: folderOverrides[node.path],
+					height: FOLDER_ROW_HEIGHT_PX,
+				});
 			}
 
 			if (isExpanded || !node.path) {
@@ -465,7 +526,7 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 					if (!(visibleNodeByPath.get(childNode.path) ?? false)) {
 						continue;
 					}
-					result.push(...renderNode(childNode, node.path ? depth + 1 : depth));
+					walk(childNode, node.path ? depth + 1 : depth);
 				}
 
 				for (const treeJob of node.jobs) {
@@ -477,52 +538,104 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 					if (!job) continue;
 
 					const jobDepth = node.path ? depth + 1 : depth;
-					result.push(
-						<JobRow
-							key={job.id}
-							job={job}
-							depth={jobDepth}
-							isSelected={selectedJobId === job.id}
-							folderOverride={getFolderOverrideForJob(job.path)}
-							onSelect={handleSelectJobById}
-							onStart={handleStartJobById}
-							onRemove={handleRemoveJobById}
-							onUpdatePlatform={handleUpdatePlatformById}
-						/>,
-					);
+					result.push({
+						kind: "job",
+						key: job.id,
+						job,
+						depth: jobDepth,
+						folderOverride: getFolderOverrideForJob(job.path),
+						height: JOB_ROW_HEIGHT_PX,
+					});
 				}
 			}
+		};
 
-			return result;
-		},
-		[
-			expandedPaths,
-			filteredJobIds,
-			folderOverrides,
-			folderStatsByPath,
-			handleStartFolder,
-			getFolderOverrideForJob,
-			jobsById,
-			visibleNodeByPath,
-			selectedJobId,
-			setFolderPlatform,
-			togglePath,
-			handleSelectJobById,
-			handleStartJobById,
-			handleRemoveJobById,
-			handleRemoveFolder,
-			handleUpdatePlatformById,
-		],
-	);
+		walk(filteredRoot);
+		return result;
+	}, [
+		expandedPaths,
+		filteredJobIds,
+		filteredRoot,
+		folderOverrides,
+		folderStatsByPath,
+		getFolderOverrideForJob,
+		jobsById,
+		visibleNodeByPath,
+	]);
 
-	const filteredRoot = useMemo(() => {
-		if (folderFilter === "all") return tree;
-		return findNode(tree, folderFilter) ?? tree;
-	}, [folderFilter, tree]);
+	const scrollContainerRef = useRef<HTMLDivElement>(null);
+	const [scrollTop, setScrollTop] = useState(0);
+	const [viewportHeight, setViewportHeight] = useState(0);
 
-	const hasVisibleJobsInView = useMemo(() => {
-		return visibleNodeByPath.get(filteredRoot.path) ?? false;
-	}, [filteredRoot.path, visibleNodeByPath]);
+	useEffect(() => {
+		const element = scrollContainerRef.current;
+		if (!element) return;
+
+		setViewportHeight(element.clientHeight);
+		setScrollTop(element.scrollTop);
+
+		const observer = new ResizeObserver(() => {
+			setViewportHeight(element.clientHeight);
+		});
+		observer.observe(element);
+
+		return () => observer.disconnect();
+	}, []);
+
+	const cumulativeHeights = useMemo(() => {
+		const cumulative = [0];
+		for (const row of rows) {
+			cumulative.push(cumulative[cumulative.length - 1] + row.height);
+		}
+		return cumulative;
+	}, [rows]);
+
+	const shouldVirtualize = rows.length > VIRTUALIZE_AFTER_ROWS;
+
+	const virtualWindow = useMemo(() => {
+		if (!shouldVirtualize || rows.length === 0) {
+			return {
+				startIndex: 0,
+				endIndex: rows.length,
+				topSpacerHeight: 0,
+				bottomSpacerHeight: 0,
+			};
+		}
+
+		const visibleBottom = scrollTop + viewportHeight;
+		const rawStart = findRowIndexByOffset(scrollTop, cumulativeHeights);
+		const rawEnd = findRowIndexByOffset(visibleBottom, cumulativeHeights) + 1;
+
+		const startIndex = Math.max(0, rawStart - VIRTUAL_OVERSCAN_ROWS);
+		const endIndex = Math.min(rows.length, rawEnd + VIRTUAL_OVERSCAN_ROWS);
+
+		const totalHeight = cumulativeHeights[cumulativeHeights.length - 1];
+		const topSpacerHeight = cumulativeHeights[startIndex];
+		const bottomSpacerHeight = Math.max(0, totalHeight - cumulativeHeights[endIndex]);
+
+		return {
+			startIndex,
+			endIndex,
+			topSpacerHeight,
+			bottomSpacerHeight,
+		};
+	}, [shouldVirtualize, rows.length, scrollTop, viewportHeight, cumulativeHeights]);
+
+	const visibleRows = useMemo(() => {
+		if (!shouldVirtualize) return rows;
+		return rows.slice(virtualWindow.startIndex, virtualWindow.endIndex);
+	}, [rows, shouldVirtualize, virtualWindow.endIndex, virtualWindow.startIndex]);
+
+	const renderSpacer = (key: string, height: number): ReactNode => {
+		if (height <= 0) return null;
+		return (
+			<TableRow key={key}>
+				<TableCell colSpan={7} className="p-0 border-0">
+					<div style={{ height: `${height}px` }} />
+				</TableCell>
+			</TableRow>
+		);
+	};
 
 	return (
 		<div className="space-y-2 flex flex-col h-full min-h-0">
@@ -585,7 +698,13 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 			</div>
 
 			{/* Table Container */}
-			<div className="rounded-md border bg-card flex-1 overflow-y-auto min-h-0 relative">
+			<div
+				ref={scrollContainerRef}
+				onScroll={(event) => {
+					setScrollTop(event.currentTarget.scrollTop);
+				}}
+				className="rounded-md border bg-card flex-1 overflow-y-auto min-h-0 relative"
+			>
 				<Table>
 					<TableHeader className="sticky top-0 bg-card z-10 shadow-sm">
 						<TableRow>
@@ -611,7 +730,49 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 								</TableCell>
 							</TableRow>
 						) : (
-							renderNode(filteredRoot)
+							<>
+								{shouldVirtualize &&
+									renderSpacer("top-spacer", virtualWindow.topSpacerHeight)}
+								{visibleRows.map((row) => {
+									if (row.kind === "folder") {
+										return (
+											<FolderRow
+												key={row.key}
+												node={row.node}
+												depth={row.depth}
+												isExpanded={expandedPaths[row.node.path] ?? true}
+												totalItems={row.totalItems}
+												pendingInFolder={row.pendingInFolder}
+												isProcessing={row.isProcessing}
+												folderOverride={row.folderOverride}
+												inferredPlatform={row.inferredPlatform}
+												onToggle={() => togglePath(row.node.path)}
+												onStartFolder={() => handleStartFolder(row.node)}
+												onSetPlatform={(platform) =>
+													setFolderPlatform(row.node.path, platform)
+												}
+												onRemove={() => handleRemoveFolder(row.node)}
+											/>
+										);
+									}
+
+									return (
+										<JobRow
+											key={row.key}
+											job={row.job}
+											depth={row.depth}
+											isSelected={selectedJobId === row.job.id}
+											folderOverride={row.folderOverride}
+											onSelect={handleSelectJobById}
+											onStart={handleStartJobById}
+											onRemove={handleRemoveJobById}
+											onUpdatePlatform={handleUpdatePlatformById}
+										/>
+									);
+								})}
+								{shouldVirtualize &&
+									renderSpacer("bottom-spacer", virtualWindow.bottomSpacerHeight)}
+							</>
 						)}
 					</TableBody>
 				</Table>
