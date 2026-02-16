@@ -1,12 +1,3 @@
-/**
- * Use Case - Detect System
- * Business logic for detecting gaming system from file.
- *
- * Single Responsibility: Only handles system detection.
- *
- * @module domain/usecases/DetectSystemUseCase
- */
-
 import { DetectedSystem } from "../types/platform.types";
 import { IFileSystemRepository } from "../repositories/IFileSystemRepository";
 
@@ -228,3 +219,4 @@ export class DetectSystemUseCase {
 		return "Unknown";
 	}
 }
+

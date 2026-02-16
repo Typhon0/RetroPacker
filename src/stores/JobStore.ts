@@ -32,6 +32,10 @@ export interface WorkflowProgressSummary {
 	failed: number;
 	pending: number;
 	overallProgress: number;
+	estimatedCompressedBytes: number;
+	estimatedSavedBytes: number;
+	estimatedCompressionRatio: number | undefined;
+	jobsWithCompressionEstimate: number;
 }
 
 function createWorkflowRecord<T>(
@@ -88,20 +92,46 @@ function createProgressSummary(queue: readonly JobState[]): WorkflowProgressSumm
 			failed: 0,
 			pending: 0,
 			overallProgress: 0,
+			estimatedCompressedBytes: 0,
+			estimatedSavedBytes: 0,
+			estimatedCompressionRatio: undefined,
+			jobsWithCompressionEstimate: 0,
 		};
 	}
 
 	let progressSum = 0;
+	let estimatedOriginalBytes = 0;
+	let estimatedCompressedBytes = 0;
+	let jobsWithCompressionEstimate = 0;
+
 	for (const job of queue) {
 		const status = job.status.value;
 		if (status === "completed") {
 			progressSum += 100;
-			continue;
-		}
-		if (status === "processing") {
+		} else if (status === "processing") {
 			progressSum += job.progress.value;
 		}
+
+		if (status !== "completed") {
+			continue;
+		}
+
+		const ratio = job.compressionRatio.value;
+		if (ratio === undefined || !Number.isFinite(ratio) || job.originalSize <= 0) {
+			continue;
+		}
+
+		const normalizedRatio = Math.max(0, ratio);
+		estimatedOriginalBytes += job.originalSize;
+		estimatedCompressedBytes += job.originalSize * (normalizedRatio / 100);
+		jobsWithCompressionEstimate += 1;
 	}
+
+	const estimatedSavedBytes = estimatedOriginalBytes - estimatedCompressedBytes;
+	const estimatedCompressionRatio =
+		estimatedOriginalBytes > 0
+			? (estimatedCompressedBytes / estimatedOriginalBytes) * 100
+			: undefined;
 
 	return {
 		total: queueLength,
@@ -110,6 +140,10 @@ function createProgressSummary(queue: readonly JobState[]): WorkflowProgressSumm
 		failed: failedCount,
 		pending: pendingCount,
 		overallProgress: progressSum / queueLength,
+		estimatedCompressedBytes,
+		estimatedSavedBytes,
+		estimatedCompressionRatio,
+		jobsWithCompressionEstimate,
 	};
 }
 

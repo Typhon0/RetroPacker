@@ -1,10 +1,3 @@
-/**
- * Repository Interface - Settings Repository
- * Contract for application settings persistence.
- *
- * @module domain/repositories/ISettingsRepository
- */
-
 import {
 	CompressionPreset,
 	ChdSettings,
@@ -151,3 +144,4 @@ export interface ISettingsRepository {
 	 */
 	subscribe(callback: (settings: AppSettings) => void): () => void;
 }
+

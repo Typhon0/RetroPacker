@@ -1,10 +1,3 @@
-/**
- * Domain Entity - Job
- * Type definitions for processing jobs.
- *
- * @module domain/entities/Job
- */
-
 import type {
 	JobStatus,
 	CompressionStrategy,
@@ -24,6 +17,7 @@ export interface JobProps {
 	readonly progress: number;
 	readonly originalSize: number;
 	readonly compressedSize?: number;
+	readonly compressionRatio?: number;
 	readonly outputLog: readonly string[];
 	readonly errorMessage?: string;
 	readonly strategy: CompressionStrategy;
@@ -57,3 +51,4 @@ export interface CreateJobProps {
  * Job update properties (partial).
  */
 export type JobUpdate = Partial<Omit<JobProps, "id" | "filename" | "path">>;
+

@@ -68,6 +68,19 @@ function formatSize(bytes: number): string {
 	return `${size.toFixed(2)} ${units[unitIndex]}`;
 }
 
+function formatDeltaSize(bytes: number): string {
+	if (bytes === 0) return "0 B";
+	return formatSize(Math.abs(bytes));
+}
+
+function formatRatio(ratio: number): string {
+	return `${Number.isInteger(ratio) ? ratio.toString() : ratio.toFixed(1)}%`;
+}
+
+function estimateSavedBytes(originalSize: number, compressionRatio: number): number {
+	return originalSize - originalSize * (compressionRatio / 100);
+}
+
 const JobProgressCell = React.memo(({ job }: { job: JobState }) => {
 	const progress = useSignalValue(job.progress);
 	const status = useSignalValue(job.status);
@@ -93,6 +106,53 @@ const JobEtaCell = React.memo(({ job }: { job: JobState }) => {
 			{etaSeconds !== undefined && status === "processing"
 				? formatDuration(etaSeconds)
 				: "-"}
+		</TableCell>
+	);
+});
+
+const JobSizeCell = React.memo(({ job }: { job: JobState }) => {
+	const status = useSignalValue(job.status);
+	const compressionRatio = useSignalValue(job.compressionRatio);
+	const showRatio = status === "completed" && compressionRatio !== undefined;
+	const estimatedSavedBytes = showRatio
+		? estimateSavedBytes(job.originalSize, compressionRatio)
+		: undefined;
+	const deltaLabel =
+		estimatedSavedBytes === undefined
+			? undefined
+			: `${estimatedSavedBytes >= 0 ? "-" : "+"}${formatDeltaSize(estimatedSavedBytes)}`;
+	const deltaTitle =
+		estimatedSavedBytes === undefined
+			? undefined
+			: estimatedSavedBytes >= 0
+				? `Estimated space saved: ${formatDeltaSize(estimatedSavedBytes)}`
+				: `Estimated size increase: ${formatDeltaSize(estimatedSavedBytes)}`;
+	const isSavingsPositive =
+		estimatedSavedBytes !== undefined && estimatedSavedBytes >= 0;
+
+	return (
+		<TableCell className="text-right">
+			<div className="inline-flex max-w-full items-center justify-end gap-1.5 whitespace-nowrap text-xs font-mono">
+				<span className="text-muted-foreground">{formatSize(job.originalSize)}</span>
+				{showRatio && (
+					<span className="inline-flex items-center rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-sky-500">
+						{formatRatio(compressionRatio)}
+					</span>
+				)}
+				{deltaLabel && (
+					<span
+						title={deltaTitle}
+						className={cn(
+							"inline-flex items-center rounded-full border px-2 py-0.5",
+							isSavingsPositive
+								? "border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
+								: "border-amber-500/30 bg-amber-500/10 text-amber-500",
+						)}
+					>
+						{deltaLabel}
+					</span>
+				)}
+			</div>
 		</TableCell>
 	);
 });
@@ -176,9 +236,7 @@ const JobRowComponent = ({
 			</TableCell>
 			<JobProgressCell job={job} />
 			<JobEtaCell job={job} />
-			<TableCell className="text-right text-xs font-mono">
-				{formatSize(job.originalSize)}
-			</TableCell>
+			<JobSizeCell job={job} />
 			<TableCell className="text-right">
 				<div className="flex justify-end gap-1">
 					{(status === "pending" || status === "failed") && (

@@ -1,13 +1,3 @@
-/**
- * Domain Types - Workflow
- * Core type definitions for job processing workflows.
- *
- * @module domain/types/workflow.types
- */
-
-/**
- * Possible states for a job in the processing queue.
- */
 export const JOB_STATUS = {
 	PENDING: "pending",
 	PROCESSING: "processing",
@@ -52,3 +42,5 @@ export type CompressionStrategy = "createcd" | "createdvd" | "raw";
  * Verification result status.
  */
 export type VerificationResult = "pass" | "fail" | "unknown";
+
+

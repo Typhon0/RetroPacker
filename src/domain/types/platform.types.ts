@@ -1,11 +1,4 @@
 /**
- * Domain Types - Platform
- * Type definitions for gaming platforms and systems.
- *
- * @module domain/types/platform.types
- */
-
-/**
  * Supported gaming platforms for compression/extraction.
  */
 export const PLATFORM = {
@@ -82,3 +75,4 @@ export const PLATFORM_DISPLAY_NAMES: Record<Platform, string> = {
 	[PLATFORM.GAMECUBE]: "Nintendo GameCube",
 	[PLATFORM.WII]: "Nintendo Wii",
 };
+

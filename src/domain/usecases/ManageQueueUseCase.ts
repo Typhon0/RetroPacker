@@ -1,12 +1,3 @@
-/**
- * Use Case - Manage Queue
- * Business logic for managing job queues.
- *
- * Single Responsibility: Only handles queue management.
- *
- * @module domain/usecases/ManageQueueUseCase
- */
-
 import { JobProps } from "../entities/Job";
 import { WorkflowType } from "../types/workflow.types";
 import { CompressionStrategy } from "../types/workflow.types";
@@ -410,3 +401,4 @@ export class ManageQueueUseCase {
 		}
 	}
 }
+

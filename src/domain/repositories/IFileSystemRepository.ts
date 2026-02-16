@@ -1,13 +1,4 @@
 /**
- * Repository Interface - File System
- * Contract for file system operations.
- *
- * Follows Interface Segregation Principle - focused on file operations only.
- *
- * @module domain/repositories/IFileSystemRepository
- */
-
-/**
  * File metadata information.
  */
 export interface FileInfo {
@@ -129,3 +120,4 @@ export interface IFileSystemRepository {
 	 */
 	computeFileHash(path: string): Promise<string>;
 }
+

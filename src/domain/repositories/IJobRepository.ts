@@ -1,21 +1,6 @@
-/**
- * Repository Interface - Job Repository
- * Contract for job persistence and state management.
- *
- * @module domain/repositories/IJobRepository
- */
-
 import { JobProps, JobUpdate } from "../entities/Job";
 import { WorkflowType } from "../types/workflow.types";
 
-/**
- * Job Repository Interface
- *
- * Abstracts job state management, allowing for:
- * - Different implementations (Zustand, Redux, Mock)
- * - Easy testing with mock implementations
- * - Dependency inversion for clean architecture
- */
 export interface IJobRepository {
 	/**
 	 * Get all jobs for a workflow.
@@ -91,15 +76,4 @@ export interface IJobRepository {
 	 */
 	setProcessing(workflow: WorkflowType, processing: boolean): void;
 
-	/**
-	 * Subscribe to job changes in a workflow.
-	 *
-	 * @param workflow - The workflow type
-	 * @param callback - Callback when jobs change
-	 * @returns Unsubscribe function
-	 */
-	subscribe(
-		workflow: WorkflowType,
-		callback: (jobs: JobProps[]) => void,
-	): () => void;
 }

@@ -1,13 +1,3 @@
-/**
- * Repository Context
- * React Context for Dependency Injection of repository implementations.
- *
- * This enables Clean Architecture's Dependency Inversion Principle by
- * allowing components to depend on interfaces rather than implementations.
- *
- * @module presentation/context/RepositoryContext
- */
-
 import React, { createContext, useContext, useMemo, ReactNode } from "react";
 import { ICommandExecutor } from "../../domain/repositories/ICommandExecutor";
 import { IFileSystemRepository } from "../../domain/repositories/IFileSystemRepository";
@@ -15,26 +5,19 @@ import { INotificationService } from "../../domain/repositories/INotificationSer
 import { IJobRepository } from "../../domain/repositories/IJobRepository";
 import { ISettingsRepository } from "../../domain/repositories/ISettingsRepository";
 
-// Tauri implementations
 import { TauriCommandExecutor } from "../../data/repositories/TauriCommandExecutor";
 import { TauriFileSystemRepository } from "../../data/repositories/TauriFileSystemRepository";
 import { TauriNotificationService } from "../../data/repositories/TauriNotificationService";
 
-// Mock implementations
 import { MockCommandExecutor } from "../../data/repositories/MockCommandExecutor";
 import { MockFileSystemRepository } from "../../data/repositories/MockFileSystemRepository";
 import { MockNotificationService } from "../../data/repositories/MockNotificationService";
 
-// Zustand adapters
 import { ZustandJobRepository } from "../../data/repositories/ZustandJobRepository";
 import { ZustandSettingsRepository } from "../../data/repositories/ZustandSettingsRepository";
 
-// Process management
 import { ProcessRegistry } from "../../services/ProcessRegistry";
 
-/**
- * All available repositories for dependency injection.
- */
 export interface Repositories {
 	readonly commandExecutor: ICommandExecutor;
 	readonly fileSystem: IFileSystemRepository;
@@ -43,21 +26,12 @@ export interface Repositories {
 	readonly settingsRepository: ISettingsRepository;
 }
 
-/**
- * Context for repositories.
- */
 const RepositoryContext = createContext<Repositories | null>(null);
 
-/**
- * Check if running in Tauri environment.
- */
 function isTauriEnvironment(): boolean {
 	return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-/**
- * Create repository instances based on environment.
- */
 function createRepositories(): Repositories {
 	const isTauri = isTauriEnvironment();
 
@@ -90,30 +64,10 @@ function createRepositories(): Repositories {
 	};
 }
 
-/**
- * Provider props.
- */
 interface RepositoryProviderProps {
 	children: ReactNode;
-	/**
-	 * Optional custom repositories for testing.
-	 */
 	overrides?: Partial<Repositories>;
 }
-
-/**
- * Repository Provider
- *
- * Provides repository implementations to the component tree.
- * Uses Tauri implementations in production, mocks in development.
- *
- * @example
- * ```tsx
- * <RepositoryProvider>
- *   <App />
- * </RepositoryProvider>
- * ```
- */
 export function RepositoryProvider({
 	children,
 	overrides,
@@ -121,7 +75,6 @@ export function RepositoryProvider({
 	const repositories = useMemo(() => {
 		const repos = createRepositories();
 
-		// Apply any testing overrides
 		if (overrides) {
 			return { ...repos, ...overrides };
 		}
@@ -136,16 +89,6 @@ export function RepositoryProvider({
 	);
 }
 
-/**
- * Hook to access all repositories.
- *
- * @throws Error if used outside RepositoryProvider
- *
- * @example
- * ```tsx
- * const { commandExecutor, fileSystem } = useRepositories();
- * ```
- */
 export function useRepositories(): Repositories {
 	const context = useContext(RepositoryContext);
 
@@ -154,39 +97,4 @@ export function useRepositories(): Repositories {
 	}
 
 	return context;
-}
-
-/**
- * Hook to access command executor.
- */
-export function useCommandExecutor(): ICommandExecutor {
-	return useRepositories().commandExecutor;
-}
-
-/**
- * Hook to access file system repository.
- */
-export function useFileSystem(): IFileSystemRepository {
-	return useRepositories().fileSystem;
-}
-
-/**
- * Hook to access notification service.
- */
-export function useNotificationService(): INotificationService {
-	return useRepositories().notificationService;
-}
-
-/**
- * Hook to access job repository.
- */
-export function useJobRepository(): IJobRepository {
-	return useRepositories().jobRepository;
-}
-
-/**
- * Hook to access settings repository.
- */
-export function useSettingsRepository(): ISettingsRepository {
-	return useRepositories().settingsRepository;
 }

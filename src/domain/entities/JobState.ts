@@ -30,6 +30,7 @@ export class JobState {
 	readonly status: Signal<JobStatus>;
 	readonly progress: Signal<number>;
 	readonly compressedSize: Signal<number | undefined>;
+	readonly compressionRatio: Signal<number | undefined>;
 	readonly outputLog: Signal<readonly string[]>;
 	readonly errorMessage: Signal<string | undefined>;
 	readonly startTime: Signal<number | undefined>;
@@ -61,6 +62,7 @@ export class JobState {
 		this.status = signal(props.status);
 		this.progress = signal(props.progress);
 		this.compressedSize = signal(props.compressedSize);
+		this.compressionRatio = signal(props.compressionRatio);
 		this.outputLog = signal(props.outputLog.slice(-MAX_LOG_LINES_PER_JOB));
 		this.errorMessage = signal(props.errorMessage);
 		this.startTime = signal(props.startTime);
@@ -102,6 +104,10 @@ export class JobState {
 		this.etaSeconds.value = value;
 	}
 
+	setCompressionRatio(value: number | undefined): void {
+		this.compressionRatio.value = value;
+	}
+
 	appendLog(line: string): void {
 		this.logBuffer.push(line);
 		if (this.logBuffer.length >= LOG_BATCH_SIZE) {
@@ -133,6 +139,7 @@ export class JobState {
 		this.errorMessage.value = undefined;
 		this.etaSeconds.value = undefined;
 		this.startTime.value = undefined;
+		this.compressionRatio.value = undefined;
 		this.clearLogs();
 	}
 
@@ -148,6 +155,9 @@ export class JobState {
 		}
 		if ("compressedSize" in updates) {
 			this.compressedSize.value = updates.compressedSize;
+		}
+		if ("compressionRatio" in updates) {
+			this.compressionRatio.value = updates.compressionRatio;
 		}
 		if ("outputLog" in updates && Array.isArray(updates.outputLog)) {
 			this.clearBufferedLogs();
@@ -189,6 +199,7 @@ export class JobState {
 			progress: this.progress.value,
 			originalSize: this.originalSize,
 			compressedSize: this.compressedSize.value,
+			compressionRatio: this.compressionRatio.value,
 			outputLog: logs,
 			errorMessage: this.errorMessage.value,
 			strategy: this.strategy,

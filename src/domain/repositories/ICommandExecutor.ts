@@ -1,13 +1,4 @@
 /**
- * Repository Interface - Command Executor
- * Contract for executing external commands (chdman, DolphinTool).
- *
- * Follows Interface Segregation Principle - focused on command execution only.
- *
- * @module domain/repositories/ICommandExecutor
- */
-
-/**
  * Supported binary executables.
  */
 export type BinaryName = "chdman" | "DolphinTool";
@@ -88,3 +79,4 @@ export interface ICommandExecutor {
 	 */
 	forceKillProcess(pid: number): Promise<void>;
 }
+

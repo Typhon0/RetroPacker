@@ -1,13 +1,4 @@
 /**
- * Repository Interface - Notification Service
- * Contract for displaying system notifications.
- *
- * Follows Interface Segregation Principle - focused on notifications only.
- *
- * @module domain/repositories/INotificationService
- */
-
-/**
  * Notification options.
  */
 export interface NotificationOptions {
@@ -65,3 +56,4 @@ export interface INotificationService {
 	 */
 	notifyFailure(title: string, body: string): Promise<void>;
 }
+

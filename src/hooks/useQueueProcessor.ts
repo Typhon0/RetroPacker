@@ -6,6 +6,70 @@ import { useRepositories } from "../presentation/context/RepositoryContext";
 import { ProcessJobUseCase } from "../domain/usecases/ProcessJobUseCase";
 import { jobStore } from "@/stores/JobStore";
 import { useSignalValue } from "@/hooks/useSignalValue";
+import type { JobState } from "@/domain/entities/JobState";
+
+export interface QueueDispatchPlan {
+	processingCount: number;
+	nextJob: JobState | undefined;
+	staleRequestIds: string[];
+	selectedRequestedId?: string;
+	canDispatch: boolean;
+	shouldAutoPause: boolean;
+}
+
+export function planQueueDispatch(params: {
+	queue: readonly JobState[];
+	startRequests: readonly string[];
+	isProcessing: boolean;
+	concurrency: number;
+}): QueueDispatchPlan {
+	const { queue, startRequests, isProcessing, concurrency } = params;
+	let processingCount = 0;
+	let pendingCount = 0;
+
+	for (const job of queue) {
+		if (job.status.value === "processing") {
+			processingCount += 1;
+		} else if (job.status.value === "pending") {
+			pendingCount += 1;
+		}
+	}
+
+	let nextRequestedJob: JobState | undefined;
+	const staleRequestIds: string[] = [];
+
+	for (const requestedId of startRequests) {
+		const candidate = queue.find((job) => job.id === requestedId);
+		if (candidate?.status.value === "pending") {
+			nextRequestedJob = candidate;
+			break;
+		}
+		staleRequestIds.push(requestedId);
+	}
+
+	const nextQueuedJob = isProcessing
+		? queue.find((job) => job.status.value === "pending")
+		: undefined;
+	const nextJob = nextRequestedJob ?? nextQueuedJob;
+	const hasOnlyStaleRequests = staleRequestIds.length === startRequests.length;
+	const shouldAutoPause =
+		isProcessing &&
+		processingCount === 0 &&
+		pendingCount === 0 &&
+		hasOnlyStaleRequests;
+
+	return {
+		processingCount,
+		nextJob,
+		staleRequestIds,
+		selectedRequestedId: nextRequestedJob?.id,
+		canDispatch:
+			processingCount < concurrency &&
+			(isProcessing || startRequests.length > 0) &&
+			!!nextJob,
+		shouldAutoPause,
+	};
+}
 
 /**
  * Hook to process jobs in a specific workflow queue.
@@ -18,6 +82,7 @@ export function useQueueProcessor(workflow: WorkflowType) {
 	const consumeStartRequest = useQueueStore(
 		(state) => state.consumeStartRequest,
 	);
+	const setProcessing = useQueueStore((state) => state.setProcessing);
 	const updateJob = useQueueStore((state) => state.updateJob);
 	const concurrency = usePackerStore((state) => state.concurrency);
 
@@ -52,51 +117,43 @@ export function useQueueProcessor(workflow: WorkflowType) {
 		const processQueue = async () => {
 			const queue = jobStore.getQueue(workflow);
 			const latestStartRequests = useQueueStore.getState().startRequests[workflow];
-			const processingCount = queue.filter(
-				(job) => job.status.value === "processing",
-			).length;
+			const plan = planQueueDispatch({
+				queue,
+				startRequests: latestStartRequests,
+				isProcessing,
+				concurrency,
+			});
 
-			let nextRequestedJob = undefined as (typeof queue)[number] | undefined;
-			for (const requestedId of latestStartRequests) {
-				const candidate = queue.find((job) => job.id === requestedId);
-				if (candidate?.status.value === "pending") {
-					nextRequestedJob = candidate;
-					break;
-				}
-				consumeStartRequest(workflow, requestedId);
+			for (const staleRequestId of plan.staleRequestIds) {
+				consumeStartRequest(workflow, staleRequestId);
 			}
 
-			const nextQueuedJob = isProcessing
-				? queue.find((job) => job.status.value === "pending")
-				: undefined;
-			const nextJobState = nextRequestedJob ?? nextQueuedJob;
-
-			const canDispatch =
-				processingCount < concurrency &&
-				(isProcessing || latestStartRequests.length > 0) &&
-				!!nextJobState;
-
-			if (!canDispatch || !nextJobState) {
+			if (plan.shouldAutoPause) {
+				setProcessing(workflow, false);
 				return;
 			}
 
-			if (nextRequestedJob) {
-				consumeStartRequest(workflow, nextRequestedJob.id);
+			if (!plan.canDispatch || !plan.nextJob) {
+				return;
+			}
+
+			if (plan.selectedRequestedId) {
+				consumeStartRequest(workflow, plan.selectedRequestedId);
 			}
 
 			try {
 				const outputDir = settings.outputDirectory
 					? settings.outputDirectory
-					: await repositories.fileSystem.dirname(nextJobState.path);
+					: await repositories.fileSystem.dirname(plan.nextJob.path);
 
 				processJobUseCase
-					.execute(nextJobState, outputDir, workflow, settings)
+					.execute(plan.nextJob, outputDir, workflow, settings)
 					.catch((err) => {
 						console.error(`[QueueProcessor] Job execution failed unhandled:`, err);
 					});
 			} catch (e) {
 				console.error("Failed to start job", e);
-				updateJob(workflow, nextJobState.id, {
+				updateJob(workflow, plan.nextJob.id, {
 					status: "failed",
 					errorMessage: "Could not determine output path or start job",
 				});
@@ -110,6 +167,7 @@ export function useQueueProcessor(workflow: WorkflowType) {
 		queueStats.processingCount,
 		startRequests,
 		consumeStartRequest,
+		setProcessing,
 		concurrency,
 		isProcessing,
 		workflow,

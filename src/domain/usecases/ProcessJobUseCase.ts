@@ -1,12 +1,3 @@
-/**
- * Use Case - Process Job
- * Business logic for processing a single job.
- *
- * Single Responsibility: Only handles job processing orchestration.
- *
- * @module domain/usecases/ProcessJobUseCase
- */
-
 import { JobState } from "../entities/JobState";
 import { WorkflowType } from "../types/workflow.types";
 import {
@@ -136,6 +127,7 @@ export class ProcessJobUseCase {
 			job.setErrorMessage(undefined);
 			job.setStartTime(Date.now());
 			job.setEtaSeconds(undefined);
+			job.setCompressionRatio(undefined);
 			const emitProgress = this.createProgressEmitter(job);
 
 			// Determine which tool to use
@@ -576,6 +568,14 @@ export class ProcessJobUseCase {
 		job: JobState,
 		emitProgress: (progress: number, etaSeconds?: number) => void,
 	): void {
+		const ratioMatch = line.match(/final ratio\s*=\s*(\d+(?:\.\d+)?)%/i);
+		if (ratioMatch) {
+			const ratio = Number.parseFloat(ratioMatch[1]);
+			if (Number.isFinite(ratio)) {
+				job.setCompressionRatio(ratio);
+			}
+		}
+
 		const match = line.match(
 			/(?:Compressing|Extracting|Processing),\s+(\d+\.?\d*)%\s+complete/,
 		);
@@ -700,3 +700,4 @@ export class ProcessJobUseCase {
 		}
 	}
 }
+

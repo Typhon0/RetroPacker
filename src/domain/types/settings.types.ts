@@ -1,11 +1,4 @@
 /**
- * Domain Types - Settings
- * Type definitions for application settings and tool configurations.
- *
- * @module domain/types/settings.types
- */
-
-/**
  * Compression preset levels.
  */
 export type CompressionPreset = "balanced" | "max" | "fast" | "raw" | "custom";
@@ -95,3 +88,4 @@ export const COMPRESSION_LEVEL_MAP: Record<CompressionPreset, number> = {
 export function getCompressionLevel(preset: CompressionPreset): number {
 	return COMPRESSION_LEVEL_MAP[preset];
 }
+
