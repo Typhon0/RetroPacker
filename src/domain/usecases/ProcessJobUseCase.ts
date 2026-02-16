@@ -7,7 +7,7 @@
  * @module domain/usecases/ProcessJobUseCase
  */
 
-import { JobProps } from "../entities/Job";
+import { JobState } from "../entities/JobState";
 import { WorkflowType } from "../types/workflow.types";
 import {
 	CompressionPreset,
@@ -20,7 +20,6 @@ import {
 	ICommandExecutor,
 	CommandCallbacks,
 } from "../repositories/ICommandExecutor";
-import { IJobRepository } from "../repositories/IJobRepository";
 import { INotificationService } from "../repositories/INotificationService";
 import { IFileSystemRepository } from "../repositories/IFileSystemRepository";
 import { ProcessRegistry } from "@/services/ProcessRegistry";
@@ -30,7 +29,6 @@ import { ProcessRegistry } from "@/services/ProcessRegistry";
  */
 export interface ProcessJobDependencies {
 	readonly commandExecutor: ICommandExecutor;
-	readonly jobRepository: IJobRepository;
 	readonly notificationService: INotificationService;
 	readonly fileSystem: IFileSystemRepository;
 }
@@ -67,7 +65,7 @@ export class ProcessJobUseCase {
 	 * @param settings - Current application settings
 	 */
 	async execute(
-		job: JobProps,
+		job: JobState,
 		outputDir: string,
 		workflow: WorkflowType,
 		settings: ProcessJobSettings,
@@ -98,7 +96,7 @@ export class ProcessJobUseCase {
 		}
 		ProcessJobUseCase.spawnLock.add(lockKey);
 
-		const { commandExecutor, jobRepository, notificationService } = this.deps;
+		const { commandExecutor, notificationService } = this.deps;
 		let progressInterval: ReturnType<typeof setInterval> | undefined;
 		let cleanupOwnedByCallbacks = false;
 		let hasCleanedUp = false;
@@ -131,12 +129,11 @@ export class ProcessJobUseCase {
 			}
 
 			// Mark job as processing
-			jobRepository.updateJob(workflow, job.id, {
-				status: "processing",
-				progress: 0,
-				errorMessage: undefined,
-				startTime: Date.now(),
-			});
+			job.setStatus("processing");
+			job.updateProgress(0);
+			job.setErrorMessage(undefined);
+			job.setStartTime(Date.now());
+			job.setEtaSeconds(undefined);
 
 			// Determine which tool to use
 			const usesDolphin = this.shouldUseDolphin(job);
@@ -152,34 +149,26 @@ export class ProcessJobUseCase {
 				usesDolphin,
 			);
 
-			jobRepository.appendLog(
-				workflow,
-				job.id,
-				`Starting: ${binary} ${args.join(" ")}`,
-			);
+			job.appendLog(`Starting: ${binary} ${args.join(" ")}`);
 
 			// Set up progress simulation for DolphinTool (doesn't output progress)
 			if (usesDolphin) {
-				progressInterval = this.startProgressSimulation(
-					job,
-					workflow,
-					jobRepository,
-				);
+				progressInterval = this.startProgressSimulation(job);
 			}
 
 			const callbacks: CommandCallbacks = {
 				onStdout: (line) => {
-					jobRepository.appendLog(workflow, job.id, line);
+					job.appendLog(line);
 					if (!usesDolphin) {
-						this.parseProgress(line, job, workflow, jobRepository);
+						this.parseProgress(line, job);
 					} else if (workflow === "info") {
-						this.parseDolphinInfo(line, job, workflow, jobRepository);
+						this.parseDolphinInfo(line, job);
 					}
 				},
 				onStderr: (line) => {
-					jobRepository.appendLog(workflow, job.id, `[stderr] ${line}`);
+					job.appendLog(`[stderr] ${line}`);
 					if (!usesDolphin) {
-						this.parseProgress(line, job, workflow, jobRepository);
+						this.parseProgress(line, job);
 					}
 				},
 				onClose: (result) => {
@@ -194,11 +183,9 @@ export class ProcessJobUseCase {
 							ProcessRegistry.clearCancelled(workflow, job.id);
 
 							if (result.code === 0) {
-								jobRepository.updateJob(workflow, job.id, {
-									status: "completed",
-									progress: 100,
-									etaSeconds: 0,
-								});
+								job.setStatus("completed");
+								job.setErrorMessage(undefined);
+								job.updateProgress(100, 0);
 
 								// Delete source file if setting is enabled (compress/extract only)
 								if (
@@ -208,23 +195,17 @@ export class ProcessJobUseCase {
 									try {
 										const moved = await this.deps.fileSystem.moveToTrash(job.path);
 										if (moved) {
-											jobRepository.appendLog(
-												workflow,
-												job.id,
+											job.appendLog(
 												`Source file moved to recycle bin: ${job.filename}`,
 											);
 										} else {
-											jobRepository.appendLog(
-												workflow,
-												job.id,
+											job.appendLog(
 												`Warning: Failed to move source file to recycle bin: ${job.filename}`,
 											);
 										}
 									} catch (err) {
 										const msg = err instanceof Error ? err.message : String(err);
-										jobRepository.appendLog(
-											workflow,
-											job.id,
+										job.appendLog(
 											`Warning: Failed to delete source file: ${msg}`,
 										);
 									}
@@ -236,15 +217,11 @@ export class ProcessJobUseCase {
 								);
 							} else if (wasCancelled || result.signal !== null) {
 								// Process was cancelled
-								jobRepository.updateJob(workflow, job.id, {
-									status: "failed",
-									errorMessage: "Cancelled",
-								});
+								job.setStatus("failed");
+								job.setErrorMessage("Cancelled");
 							} else {
-								jobRepository.updateJob(workflow, job.id, {
-									status: "failed",
-									errorMessage: `Exited with code ${result.code}`,
-								});
+								job.setStatus("failed");
+								job.setErrorMessage(`Exited with code ${result.code}`);
 								await notificationService.notifyFailure(
 									`${this.getWorkflowLabel(workflow)} Failed`,
 									`${job.filename} failed to process.`,
@@ -271,23 +248,15 @@ export class ProcessJobUseCase {
 							ProcessRegistry.clearCancelled(workflow, job.id);
 
 							if (wasCancelled) {
-								jobRepository.appendLog(
-									workflow,
-									job.id,
-									"Error: Process cancelled before completion",
-								);
-								jobRepository.updateJob(workflow, job.id, {
-									status: "failed",
-									errorMessage: "Cancelled",
-								});
+								job.appendLog("Error: Process cancelled before completion");
+								job.setStatus("failed");
+								job.setErrorMessage("Cancelled");
 								return;
 							}
 
-							jobRepository.appendLog(workflow, job.id, `Error: ${error.message}`);
-							jobRepository.updateJob(workflow, job.id, {
-								status: "failed",
-								errorMessage: error.message,
-							});
+							job.appendLog(`Error: ${error.message}`);
+							job.setStatus("failed");
+							job.setErrorMessage(error.message);
 							await notificationService.notifyFailure(
 								`${this.getWorkflowLabel(workflow)} Failed`,
 								`${job.filename}: ${error.message}`,
@@ -305,32 +274,24 @@ export class ProcessJobUseCase {
 			};
 
 			const process = await commandExecutor.spawn(binary, args, callbacks);
-			jobRepository.appendLog(workflow, job.id, `PID: ${process.pid}`);
+			job.appendLog(`PID: ${process.pid}`);
 			ProcessRegistry.register(workflow, job.id, process);
 			cleanupOwnedByCallbacks = true;
 		} catch (e) {
 			const wasCancelled = ProcessRegistry.wasCancelled(workflow, job.id);
 			if (wasCancelled) {
 				ProcessRegistry.clearCancelled(workflow, job.id);
-				jobRepository.updateJob(workflow, job.id, {
-					status: "failed",
-					errorMessage: "Cancelled",
-				});
-				jobRepository.appendLog(
-					workflow,
-					job.id,
-					"Cancelled before process start",
-				);
+				job.setStatus("failed");
+				job.setErrorMessage("Cancelled");
+				job.appendLog("Cancelled before process start");
 				return;
 			}
 
 			const errorMessage =
 				e instanceof Error ? e.message : "Failed to spawn process";
-			jobRepository.updateJob(workflow, job.id, {
-				status: "failed",
-				errorMessage,
-			});
-			jobRepository.appendLog(workflow, job.id, `Exception: ${errorMessage}`);
+			job.setStatus("failed");
+			job.setErrorMessage(errorMessage);
+			job.appendLog(`Exception: ${errorMessage}`);
 		} finally {
 			if (!cleanupOwnedByCallbacks) {
 				cleanup();
@@ -341,9 +302,9 @@ export class ProcessJobUseCase {
 	/**
 	 * Determine if job should use DolphinTool based on system/platform.
 	 */
-	private shouldUseDolphin(job: JobProps): boolean {
-		const system = job.system?.toLowerCase() ?? "";
-		const override = job.platformOverride?.toLowerCase() ?? "";
+	private shouldUseDolphin(job: JobState): boolean {
+		const system = job.system.value?.toLowerCase() ?? "";
+		const override = job.platformOverride.value?.toLowerCase() ?? "";
 
 		// Trust detected system first
 		if (isNintendoSystem(system)) {
@@ -368,7 +329,7 @@ export class ProcessJobUseCase {
 	 * Build command arguments based on workflow and tool.
 	 */
 	private async buildCommandArgs(
-		job: JobProps,
+		job: JobState,
 		outputDir: string,
 		workflow: WorkflowType,
 		settings: ProcessJobSettings,
@@ -384,7 +345,7 @@ export class ProcessJobUseCase {
 	 * Build chdman command arguments.
 	 */
 	private async buildChdmanArgs(
-		job: JobProps,
+		job: JobState,
 		outputDir: string,
 		workflow: WorkflowType,
 		settings: ProcessJobSettings,
@@ -413,7 +374,7 @@ export class ProcessJobUseCase {
 			// Hunk size
 			if (chd.hunkSize) {
 				args.push("-hs", chd.hunkSize.toString());
-			} else if (job.system === "PS2" || sourceExt === "iso") {
+			} else if (job.system.value === "PS2" || sourceExt === "iso") {
 				args.push("-hs", "2048");
 			}
 
@@ -461,7 +422,7 @@ export class ProcessJobUseCase {
 	 * Build DolphinTool command arguments.
 	 */
 	private async buildDolphinArgs(
-		job: JobProps,
+		job: JobState,
 		outputDir: string,
 		workflow: WorkflowType,
 		settings: ProcessJobSettings,
@@ -607,19 +568,13 @@ export class ProcessJobUseCase {
 	/**
 	 * Parse progress from chdman output.
 	 */
-	private parseProgress(
-		line: string,
-		job: JobProps,
-		workflow: WorkflowType,
-		jobRepository: IJobRepository,
-	): void {
+	private parseProgress(line: string, job: JobState): void {
 		const match = line.match(
 			/(?:Compressing|Extracting|Processing),\s+(\d+\.?\d*)%\s+complete/,
 		);
 		if (match) {
 			const percentage = parseFloat(match[1]);
-			const currentJob = jobRepository.getJob(workflow, job.id);
-			const startTime = currentJob?.startTime;
+			const startTime = job.startTime.value;
 
 			let etaSeconds: number | undefined;
 			if (startTime && percentage > 0) {
@@ -628,26 +583,20 @@ export class ProcessJobUseCase {
 				etaSeconds = Math.max(0, totalEst - elapsedSeconds);
 			}
 
-			jobRepository.updateJob(workflow, job.id, {
-				progress: percentage,
-				etaSeconds,
-			});
+			job.updateProgress(percentage, etaSeconds);
 		}
 	}
 
 	/**
 	 * Parse metadata from DolphinTool header/info output.
 	 */
-	private parseDolphinInfo(
-		line: string,
-		job: JobProps,
-		workflow: WorkflowType,
-		jobRepository: IJobRepository,
-	): void {
+	private parseDolphinInfo(line: string, job: JobState): void {
 		const lineTrimmed = line.trim();
-		// Use a mutable type for updates to avoid readonly errors
-		type MutableJobUpdate = { -readonly [P in keyof JobProps]?: JobProps[P] };
-		const updates: MutableJobUpdate = {};
+		const updates: Partial<{
+			gameId: string;
+			gameTitle: string;
+			region: string;
+		}> = {};
 
 		// Parse Standard DolphinTool Header Output
 		// Format: "Key: Value"
@@ -661,46 +610,38 @@ export class ProcessJobUseCase {
 		} else if (lineTrimmed.startsWith("Country:")) {
 			// Country is often more specific than Region, but we can store it or ignore for now
 			// If Region is missing, maybe use Country?
-			// updates.country = ... (not in JobProps yet)
+			// updates.country = ... (not tracked yet)
 		} else if (lineTrimmed.startsWith("Revision:")) {
 			// updates.revision = ...
 		}
 
 		if (Object.keys(updates).length > 0) {
-			jobRepository.updateJob(workflow, job.id, updates);
+			job.applyUpdates(updates);
 		}
 	}
 
 	/**
 	 * Start simulated progress for DolphinTool.
 	 */
-	private startProgressSimulation(
-		job: JobProps,
-		workflow: WorkflowType,
-		jobRepository: IJobRepository,
-	): ReturnType<typeof setInterval> {
+	private startProgressSimulation(job: JobState): ReturnType<typeof setInterval> {
 		const mbSize = job.originalSize / (1024 * 1024);
 		const estSeconds = Math.max(10, mbSize / 4); // 4MB/s estimate
 		const incrementPerSec = 100 / estSeconds;
 
 		return setInterval(() => {
-			const currentJob = jobRepository.getJob(workflow, job.id);
-			if (!currentJob || currentJob.status !== "processing") {
+			if (job.status.value !== "processing") {
 				return;
 			}
 
 			const newProgress = Math.min(
 				99,
-				currentJob.progress + incrementPerSec / 2,
+				job.progress.value + incrementPerSec / 2,
 			);
-			if (newProgress > currentJob.progress) {
-				jobRepository.updateJob(workflow, job.id, {
-					progress: newProgress,
-					etaSeconds: Math.max(
-						0,
-						estSeconds - (newProgress / 100) * estSeconds,
-					),
-				});
+			if (newProgress > job.progress.value) {
+				job.updateProgress(
+					newProgress,
+					Math.max(0, estSeconds - (newProgress / 100) * estSeconds),
+				);
 			}
 		}, 500);
 	}

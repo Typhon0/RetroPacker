@@ -25,7 +25,7 @@ import {
 	XCircle,
 	Trash2,
 } from "lucide-react";
-import type { Job } from "@/stores/useQueueStore";
+import type { Platform } from "@/domain/types/platform.types";
 import type { TreeNode } from "./JobTreeBuilder";
 
 interface FolderRowProps {
@@ -35,11 +35,11 @@ interface FolderRowProps {
 	totalItems: number;
 	pendingInFolder: number;
 	isProcessing: boolean;
-	folderOverride?: Job["platformOverride"];
-	inferredPlatform?: Job["platformOverride"];
+	folderOverride?: Platform;
+	inferredPlatform?: Platform;
 	onToggle: () => void;
 	onStartFolder: () => void;
-	onSetPlatform: (platform: Job["platformOverride"]) => void;
+	onSetPlatform: (platform: Platform | undefined) => void;
 	onRemove: () => void;
 }
 
@@ -92,7 +92,7 @@ export function FolderRow({
 						value={currentValue}
 						onValueChange={(val) => {
 							onSetPlatform(
-								val === "auto" ? undefined : (val as Job["platformOverride"]),
+								val === "auto" ? undefined : (val as Platform),
 							);
 						}}
 					>

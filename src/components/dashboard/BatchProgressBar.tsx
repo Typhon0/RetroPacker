@@ -7,8 +7,8 @@
  * @module components/dashboard/BatchProgressBar
  */
 
-import { useMemo } from "react";
-import { useQueueStore } from "@/stores/useQueueStore";
+import { useSignalValue } from "@/hooks/useSignalValue";
+import { jobStore } from "@/stores/JobStore";
 import type { WorkflowType } from "@/stores/useQueueStore";
 import { Progress } from "@/components/ui/progress";
 import { CheckCircle, Loader2, AlertCircle, Clock } from "lucide-react";
@@ -18,45 +18,11 @@ interface BatchProgressBarProps {
 }
 
 export function BatchProgressBar({ workflow }: BatchProgressBarProps) {
-	const queue = useQueueStore((state) => state.queues[workflow]);
+	const stats = useSignalValue(jobStore.queueSummaries[workflow]);
 
-	const stats = useMemo(() => {
-		const total = queue.length;
-		if (total === 0) return null;
+	if (stats.total === 0) return null;
 
-		let completed = 0;
-		let processing = 0;
-		let failed = 0;
-		let pending = 0;
-		let progressSum = 0;
-
-		for (const job of queue) {
-			switch (job.status) {
-				case "completed":
-					completed++;
-					progressSum += 100;
-					break;
-				case "processing":
-					processing++;
-					progressSum += job.progress;
-					break;
-				case "failed":
-					failed++;
-					break;
-				case "pending":
-					pending++;
-					break;
-			}
-		}
-
-		const overallProgress = total > 0 ? progressSum / total : 0;
-		return { total, completed, processing, failed, pending, overallProgress };
-	}, [queue]);
-
-	if (!stats || stats.total === 0) return null;
-
-	const { total, completed, processing, failed, pending, overallProgress } =
-		stats;
+	const { total, completed, processing, failed, pending, overallProgress } = stats;
 	const allDone = completed + failed === total;
 
 	return (

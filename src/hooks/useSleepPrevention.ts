@@ -1,17 +1,13 @@
 import { useEffect, useRef } from "react";
 import { useQueueStore } from "../stores/useQueueStore";
+import { jobStore } from "@/stores/JobStore";
+import { useSignalValue } from "@/hooks/useSignalValue";
 
 /**
  * Hook to prevent system sleep during active processing.
- * Uses optimized selectors to minimize re-renders.
  */
 export function useSleepPrevention() {
-	// Use a selector that only returns a boolean, not the entire queue
-	const hasActiveJobs = useQueueStore((state) =>
-		Object.values(state.queues)
-			.flat()
-			.some((j) => j.status === "processing"),
-	);
+	const hasActiveJobs = useSignalValue(jobStore.hasActiveJobs);
 	const anyProcessing = useQueueStore((state) =>
 		Object.values(state.isProcessing).some(Boolean),
 	);
@@ -22,7 +18,6 @@ export function useSleepPrevention() {
 	useEffect(() => {
 		const shouldHaveLock = anyProcessing && hasActiveJobs;
 
-		// Debounce: Only take action if the desired state changed
 		if (shouldHaveLock && lastActionRef.current !== "acquire") {
 			const requestWakeLock = async () => {
 				if (!wakeLockRef.current && "wakeLock" in navigator) {
@@ -33,14 +28,13 @@ export function useSleepPrevention() {
 
 						wakeLockRef.current.addEventListener("release", () => {
 							wakeLockRef.current = null;
-							// Don't set lastActionRef here - let effect logic handle it
 						});
 					} catch (e) {
 						console.warn("Wake lock request failed:", e);
 					}
 				}
 			};
-			requestWakeLock();
+			void requestWakeLock();
 		} else if (!shouldHaveLock && lastActionRef.current !== "release") {
 			const releaseWakeLock = async () => {
 				if (wakeLockRef.current) {
@@ -56,11 +50,10 @@ export function useSleepPrevention() {
 					lastActionRef.current = "release";
 				}
 			};
-			releaseWakeLock();
+			void releaseWakeLock();
 		}
 
 		return () => {
-			// Cleanup on unmount
 			if (wakeLockRef.current) {
 				wakeLockRef.current.release().catch(() => {});
 				wakeLockRef.current = null;
@@ -68,7 +61,6 @@ export function useSleepPrevention() {
 		};
 	}, [hasActiveJobs, anyProcessing]);
 
-	// Re-acquire wake lock when page becomes visible again
 	useEffect(() => {
 		const handleVisibilityChange = async () => {
 			if (

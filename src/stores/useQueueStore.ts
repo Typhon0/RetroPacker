@@ -1,9 +1,9 @@
 /**
  * Backward-compatible queue store exports.
  *
- * The canonical stores are now:
- * - useJobStateStore: lightweight queue/status state
- * - useJobDataStore: heavyweight per-job metadata
+ * Canonical state split:
+ * - useJobStateStore: workflow control + structural queues
+ * - JobStore/JobState: signal-backed per-job telemetry
  */
 
 export { useJobStateStore as useQueueStore } from "@/stores/useJobStateStore";

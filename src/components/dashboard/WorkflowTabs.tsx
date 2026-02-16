@@ -1,13 +1,15 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePackerStore } from "@/stores/usePackerStore";
-import { WorkflowType, Job } from "@/stores/useQueueStore";
+import { WorkflowType } from "@/stores/useQueueStore";
 import { DropZone } from "./DropZone";
 import { JobTable } from "./JobTable";
 import { SettingsToolbar } from "./SettingsToolbar";
 import { InfoViewer } from "./InfoViewer";
 import { TerminalDrawer } from "./TerminalDrawer";
 import { Archive, FolderOpen, ShieldCheck, Info } from "lucide-react";
+import { jobStore } from "@/stores/JobStore";
+import { useSignalValue } from "@/hooks/useSignalValue";
 
 const WORKFLOW_CONFIG: Record<
 	WorkflowType,
@@ -37,11 +39,23 @@ const WORKFLOW_CONFIG: Record<
 
 export function WorkflowTabs() {
 	const { activeWorkflow, setActiveWorkflow } = usePackerStore();
-	const [selectedJob, setSelectedJob] = useState<Job | undefined>(undefined);
+	const [selectedJobId, setSelectedJobId] = useState<string | undefined>(undefined);
+	const activeQueue = useSignalValue(jobStore.queues[activeWorkflow]);
+
+	const selectedJob = useMemo(() => {
+		if (!selectedJobId) return undefined;
+		return activeQueue.find((job) => job.id === selectedJobId);
+	}, [activeQueue, selectedJobId]);
+
+	useEffect(() => {
+		if (selectedJobId && !selectedJob) {
+			setSelectedJobId(undefined);
+		}
+	}, [selectedJob, selectedJobId]);
 
 	const handleTabChange = (val: string) => {
 		setActiveWorkflow(val as WorkflowType);
-		setSelectedJob(undefined); // Clear selection on tab switch
+		setSelectedJobId(undefined);
 	};
 
 	return (
@@ -92,8 +106,8 @@ export function WorkflowTabs() {
 								<div className="flex-1 min-h-0">
 									<JobTable
 										workflow={workflow}
-										onSelectJob={setSelectedJob}
-										selectedJobId={selectedJob?.id}
+										onSelectJob={(job) => setSelectedJobId(job.id)}
+										selectedJobId={selectedJobId}
 									/>
 								</div>
 							</>
@@ -106,7 +120,7 @@ export function WorkflowTabs() {
 			<TerminalDrawer
 				job={selectedJob}
 				isOpen={!!selectedJob}
-				onClose={() => setSelectedJob(undefined)}
+				onClose={() => setSelectedJobId(undefined)}
 			/>
 		</div>
 	);

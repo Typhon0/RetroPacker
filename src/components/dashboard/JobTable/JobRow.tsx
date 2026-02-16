@@ -10,7 +10,6 @@
 import React from "react";
 import { TableRow, TableCell } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-
 import { Progress } from "@/components/ui/progress";
 import {
 	Select,
@@ -28,26 +27,22 @@ import {
 	Trash2,
 } from "lucide-react";
 import { cn, formatDuration } from "@/lib/utils";
-import { useQueueStore } from "@/stores/useQueueStore";
-import type { Job, WorkflowType } from "@/stores/useQueueStore";
+import type { JobState } from "@/domain/entities/JobState";
+import type { Platform } from "@/domain/types/platform.types";
 import { CoverThumbnail } from "../CoverThumbnail";
+import { useSignalValue } from "@/hooks/useSignalValue";
 
 interface JobRowProps {
-	jobId: string;
-	workflow: WorkflowType;
+	job: JobState;
 	depth: number;
 	isSelected: boolean;
-	folderOverride?: Job["platformOverride"];
-	// ID-based callbacks for stable memoization
+	folderOverride?: Platform;
 	onSelect: (jobId: string) => void;
 	onStart: (jobId: string) => void;
 	onRemove: (jobId: string) => void;
-	onUpdatePlatform: (jobId: string, platform: Job["platformOverride"]) => void;
+	onUpdatePlatform: (jobId: string, platform: Platform | undefined) => void;
 }
 
-/**
- * Get status icon for job status.
- */
 function getStatusIcon(status: string): React.ReactNode {
 	switch (status) {
 		case "completed":
@@ -61,9 +56,6 @@ function getStatusIcon(status: string): React.ReactNode {
 	}
 }
 
-/**
- * Format file size for display.
- */
 function formatSize(bytes: number): string {
 	if (bytes <= 0) return "Unknown";
 	const units = ["B", "KB", "MB", "GB", "TB"];
@@ -76,13 +68,37 @@ function formatSize(bytes: number): string {
 	return `${size.toFixed(2)} ${units[unitIndex]}`;
 }
 
-/**
- * Renders a single job row with status, progress, and actions.
- * Uses ID-based callbacks to ensure stable prop references.
- */
+const JobProgressCell = React.memo(({ job }: { job: JobState }) => {
+	const progress = useSignalValue(job.progress);
+	const status = useSignalValue(job.status);
+
+	return (
+		<TableCell className="w-[25%]">
+			<div className="flex flex-col gap-1">
+				<Progress value={progress} className="h-2" />
+				{status === "processing" && (
+					<span className="text-xs text-muted-foreground">{progress.toFixed(1)}%</span>
+				)}
+			</div>
+		</TableCell>
+	);
+});
+
+const JobEtaCell = React.memo(({ job }: { job: JobState }) => {
+	const etaSeconds = useSignalValue(job.etaSeconds);
+	const status = useSignalValue(job.status);
+
+	return (
+		<TableCell className="text-xs font-mono text-muted-foreground">
+			{etaSeconds !== undefined && status === "processing"
+				? formatDuration(etaSeconds)
+				: "-"}
+		</TableCell>
+	);
+});
+
 const JobRowComponent = ({
-	jobId,
-	workflow,
+	job,
 	depth,
 	isSelected,
 	folderOverride,
@@ -90,17 +106,14 @@ const JobRowComponent = ({
 	onStart,
 	onRemove,
 	onUpdatePlatform,
-}: JobRowProps): React.ReactElement | null => {
-	const job = useQueueStore((state) =>
-		state.queues[workflow].find((candidate) => candidate.id === jobId),
-	);
-	if (!job) {
-		return null;
-	}
+}: JobRowProps): React.ReactElement => {
+	const status = useSignalValue(job.status);
+	const system = useSignalValue(job.system);
+	const platformOverride = useSignalValue(job.platformOverride);
 
 	const isDisabled = !!folderOverride;
-	const displayValue = job.platformOverride || job.system.toLowerCase();
-	const isProcessing = job.status === "processing";
+	const displayValue = platformOverride || system.toLowerCase();
+	const isProcessing = status === "processing";
 
 	return (
 		<TableRow
@@ -112,27 +125,24 @@ const JobRowComponent = ({
 		>
 			<TableCell style={{ paddingLeft: `${depth * 16 + 8}px` }}>
 				<div className="flex items-center gap-2">
-					{getStatusIcon(job.status)}
-					<CoverThumbnail system={job.system} size="sm" />
+					{getStatusIcon(status)}
+					<CoverThumbnail system={system} size="sm" />
 				</div>
 			</TableCell>
 			<TableCell className="font-medium truncate max-w-[200px]">
 				{job.filename}
 			</TableCell>
 			<TableCell>
-				{job.status === "pending" ? (
+				{status === "pending" ? (
 					<Select
 						value={displayValue}
 						onValueChange={(val) => {
-							onUpdatePlatform(job.id, val as Job["platformOverride"]);
+							onUpdatePlatform(job.id, val as Platform);
 						}}
 						disabled={isDisabled}
 					>
 						<SelectTrigger
-							className={cn(
-								"h-7 w-[100px] text-xs",
-								isDisabled && "opacity-50",
-							)}
+							className={cn("h-7 w-[100px] text-xs", isDisabled && "opacity-50")}
 							onClick={(e) => e.stopPropagation()}
 						>
 							<SelectValue />
@@ -146,10 +156,8 @@ const JobRowComponent = ({
 								"saturn",
 								"gamecube",
 								"wii",
-							].includes(job.system.toLowerCase()) && (
-								<SelectItem value={job.system.toLowerCase()}>
-									{job.system}
-								</SelectItem>
+							].includes(system.toLowerCase()) && (
+								<SelectItem value={system.toLowerCase()}>{system}</SelectItem>
 							)}
 							<SelectItem value="ps1">PS1</SelectItem>
 							<SelectItem value="ps2">PS2</SelectItem>
@@ -162,31 +170,18 @@ const JobRowComponent = ({
 					</Select>
 				) : (
 					<span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold border-transparent bg-secondary text-secondary-foreground">
-						{job.system}
+						{system}
 					</span>
 				)}
 			</TableCell>
-			<TableCell className="w-[25%]">
-				<div className="flex flex-col gap-1">
-					<Progress value={job.progress} className="h-2" />
-					{job.status === "processing" && (
-						<span className="text-xs text-muted-foreground">
-							{job.progress.toFixed(1)}%
-						</span>
-					)}
-				</div>
-			</TableCell>
-			<TableCell className="text-xs font-mono text-muted-foreground">
-				{job.etaSeconds !== undefined && job.status === "processing"
-					? formatDuration(job.etaSeconds)
-					: "-"}
-			</TableCell>
+			<JobProgressCell job={job} />
+			<JobEtaCell job={job} />
 			<TableCell className="text-right text-xs font-mono">
 				{formatSize(job.originalSize)}
 			</TableCell>
 			<TableCell className="text-right">
 				<div className="flex justify-end gap-1">
-					{(job.status === "pending" || job.status === "failed") && (
+					{(status === "pending" || status === "failed") && (
 						<Button
 							variant="ghost"
 							size="icon"

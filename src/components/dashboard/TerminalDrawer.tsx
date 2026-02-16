@@ -1,12 +1,13 @@
+import { signal } from "@preact/signals-core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Job } from "@/stores/useQueueStore";
+import { JobState } from "@/domain/entities/JobState";
 import { cn } from "@/lib/utils";
 import { X, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { EMPTY_JOB_LOGS, useJobLogStore } from "@/stores/useJobLogStore";
+import { useSignalValue } from "@/hooks/useSignalValue";
 
 interface TerminalDrawerProps {
-	job?: Job;
+	job?: JobState;
 	isOpen: boolean;
 	onClose: () => void;
 }
@@ -14,6 +15,7 @@ interface TerminalDrawerProps {
 const LINE_HEIGHT_PX = 18;
 const OVERSCAN_LINES = 24;
 const BOTTOM_STICKY_THRESHOLD_PX = 20;
+const EMPTY_LOG_SIGNAL = signal<readonly string[]>([]);
 
 export function TerminalDrawer({ job, isOpen, onClose }: TerminalDrawerProps) {
 	const scrollRef = useRef<HTMLDivElement>(null);
@@ -23,11 +25,7 @@ export function TerminalDrawer({ job, isOpen, onClose }: TerminalDrawerProps) {
 	const [viewportHeight, setViewportHeight] = useState(0);
 	const selectedJobId = job?.id;
 
-	const outputLog = useJobLogStore((state) =>
-		selectedJobId
-			? (state.logsByJobId[selectedJobId] ?? EMPTY_JOB_LOGS)
-			: EMPTY_JOB_LOGS,
-	);
+	const outputLog = useSignalValue(job ? job.outputLog : EMPTY_LOG_SIGNAL);
 	const totalLines = outputLog.length;
 
 	const visibleWindow = useMemo(() => {
@@ -64,7 +62,6 @@ export function TerminalDrawer({ job, isOpen, onClose }: TerminalDrawerProps) {
 			scrollHeight - currentTop - clientHeight <= BOTTOM_STICKY_THRESHOLD_PX;
 	}, []);
 
-	// Track viewport size for virtualized rendering.
 	useEffect(() => {
 		if (!scrollRef.current || !isOpen) return;
 
@@ -81,13 +78,12 @@ export function TerminalDrawer({ job, isOpen, onClose }: TerminalDrawerProps) {
 		return () => observer.disconnect();
 	}, [isOpen, updateBottomStickiness]);
 
-	// Keep tail-follow behavior when currently pinned to bottom.
 	useEffect(() => {
 		if (!scrollRef.current || !isOpen) return;
 
-		const jobChanged = lastJobIdRef.current !== job?.id;
+		const jobChanged = lastJobIdRef.current !== selectedJobId;
 		if (jobChanged) {
-			lastJobIdRef.current = job?.id;
+			lastJobIdRef.current = selectedJobId;
 			isAtBottomRef.current = true;
 		}
 
@@ -97,7 +93,7 @@ export function TerminalDrawer({ job, isOpen, onClose }: TerminalDrawerProps) {
 		element.scrollTop = element.scrollHeight;
 		setScrollTop(element.scrollTop);
 		updateBottomStickiness();
-	}, [isOpen, job?.id, outputLog, updateBottomStickiness]);
+	}, [isOpen, selectedJobId, outputLog, updateBottomStickiness]);
 
 	return (
 		<div

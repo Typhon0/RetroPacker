@@ -3,9 +3,11 @@ import { WorkflowTabs } from "@/components/dashboard/WorkflowTabs";
 import { GlobalSettings } from "@/components/dashboard/GlobalSettings";
 import { BatchProgressBar } from "@/components/dashboard/BatchProgressBar";
 import { useQueueProcessor } from "@/hooks/useQueueProcessor";
+import { useSignalValue } from "@/hooks/useSignalValue";
 import { useTaskbarProgress } from "@/hooks/useTaskbarProgress";
 import { useSleepPrevention } from "@/hooks/useSleepPrevention";
 import { useQueueStore } from "@/stores/useQueueStore";
+import { jobStore } from "@/stores/JobStore";
 import { Button } from "@/components/ui/button";
 import { Trash2, Play, Pause, RotateCcw } from "lucide-react";
 import { usePackerStore } from "@/stores/usePackerStore";
@@ -32,7 +34,8 @@ function AppContent() {
 	useTaskbarProgress();
 	useSleepPrevention();
 
-	const queue = useQueueStore((state) => state.queues[activeWorkflow]);
+	const queue = useSignalValue(jobStore.queues[activeWorkflow]);
+	const queueStats = useSignalValue(jobStore.queueStats[activeWorkflow]);
 	const clearQueue = useQueueStore((state) => state.clearQueue);
 	const isProcessing = useQueueStore(
 		(state) => state.isProcessing[activeWorkflow],
@@ -40,7 +43,7 @@ function AppContent() {
 	const setProcessing = useQueueStore((state) => state.setProcessing);
 	const retryFailed = useQueueStore((state) => state.retryFailed);
 
-	const failedCount = queue.filter((j) => j.status === "failed").length;
+	const failedCount = queueStats.failedCount;
 
 	// Ref to track initialization status to prevent strict mode double-invocations
 	const hasInitialized = useRef(false);

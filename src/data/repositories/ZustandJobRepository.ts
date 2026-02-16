@@ -1,6 +1,6 @@
 /**
  * Zustand Job Repository Adapter
- * Implementation of IJobRepository using split state/data stores.
+ * Implementation of IJobRepository using signal-backed JobStore.
  *
  * @module data/repositories/ZustandJobRepository
  */
@@ -8,65 +8,25 @@
 import type { IJobRepository } from "../../domain/repositories/IJobRepository";
 import type { JobProps, JobUpdate } from "../../domain/entities/Job";
 import type { WorkflowType } from "../../domain/types/workflow.types";
+import { jobStore } from "../../stores/JobStore";
 import { useQueueStore } from "../../stores/useQueueStore";
-import { useJobDataStore } from "../../stores/useJobDataStore";
-import { EMPTY_JOB_LOGS, useJobLogStore } from "../../stores/useJobLogStore";
 
 /**
- * Adapter that implements IJobRepository using split Zustand stores.
+ * Adapter that implements IJobRepository with JobState + signal storage.
  */
 export class ZustandJobRepository implements IJobRepository {
-	private toJobProps(workflow: WorkflowType, id: string): JobProps | undefined {
-		const stateStore = useQueueStore.getState();
-		const queueJob = stateStore.queues[workflow].find((job) => job.id === id);
-		if (!queueJob) return undefined;
-
-		const data = useJobDataStore.getState().jobDataById[id];
-		const logs = useJobLogStore.getState().logsByJobId[id] ?? EMPTY_JOB_LOGS;
-		if (!data) {
-			return undefined;
-		}
-
-		return {
-			id: queueJob.id,
-			filename: queueJob.filename,
-			path: data.path,
-			system: queueJob.system,
-			status: queueJob.status,
-			progress: queueJob.progress,
-			originalSize: queueJob.originalSize,
-			compressedSize: queueJob.compressedSize,
-			outputLog: logs,
-			errorMessage: queueJob.errorMessage,
-			strategy: data.strategy,
-			startTime: queueJob.startTime,
-			etaSeconds: queueJob.etaSeconds,
-			discGroup: data.discGroup,
-			discNumber: data.discNumber,
-			sourceHash: data.sourceHash,
-			verificationResult: data.verificationResult,
-			platformOverride: queueJob.platformOverride,
-			gameId: data.gameId,
-			gameTitle: data.gameTitle,
-			region: data.region,
-		};
-	}
-
 	/**
 	 * Get all jobs for a workflow.
 	 */
 	getJobs(workflow: WorkflowType): JobProps[] {
-		const ids = useQueueStore.getState().queues[workflow].map((job) => job.id);
-		return ids
-			.map((id) => this.toJobProps(workflow, id))
-			.filter((job): job is JobProps => !!job);
+		return jobStore.getQueue(workflow).map((job) => job.toJobProps());
 	}
 
 	/**
 	 * Get a specific job by ID.
 	 */
 	getJob(workflow: WorkflowType, id: string): JobProps | undefined {
-		return this.toJobProps(workflow, id);
+		return jobStore.getJob(workflow, id)?.toJobProps();
 	}
 
 	/**
@@ -129,16 +89,14 @@ export class ZustandJobRepository implements IJobRepository {
 			callback(this.getJobs(workflow));
 		};
 
-		const unsubscribeState = useQueueStore.subscribe(() => {
-			emit();
-		});
-		const unsubscribeData = useJobDataStore.subscribe(() => {
-			emit();
-		});
+		const unsubscribeQueue = jobStore.queues[workflow].subscribe(emit);
+		const unsubscribeRuntime = jobStore.runtimeByWorkflow[workflow].subscribe(emit);
+		const unsubscribeSummary = jobStore.queueSummaries[workflow].subscribe(emit);
 
 		return () => {
-			unsubscribeState();
-			unsubscribeData();
+			unsubscribeQueue();
+			unsubscribeRuntime();
+			unsubscribeSummary();
 		};
 	}
 }

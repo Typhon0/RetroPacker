@@ -15,6 +15,7 @@ import {
 } from "../../domain/usecases/ProcessJobUseCase";
 import { JobProps } from "../../domain/entities/Job";
 import { WorkflowType } from "../../domain/types/workflow.types";
+import { jobStore } from "@/stores/JobStore";
 
 /**
  * Job actions interface.
@@ -49,10 +50,10 @@ export interface JobActions {
 export function useJobActions(workflow: WorkflowType): JobActions {
 	const {
 		commandExecutor,
-		jobRepository,
 		notificationService,
 		fileSystem,
 		settingsRepository,
+		jobRepository,
 	} = useRepositories();
 
 	// Memoize the use case instance
@@ -60,11 +61,10 @@ export function useJobActions(workflow: WorkflowType): JobActions {
 		() =>
 			new ProcessJobUseCase({
 				commandExecutor,
-				jobRepository,
 				notificationService,
 				fileSystem,
 			}),
-		[commandExecutor, jobRepository, notificationService, fileSystem],
+		[commandExecutor, notificationService, fileSystem],
 	);
 
 	// Start a job
@@ -79,12 +79,12 @@ export function useJobActions(workflow: WorkflowType): JobActions {
 				deleteSourceAfterSuccess: settings.deleteSourceAfterSuccess,
 			};
 
-			await processJobUseCase.execute(
-				job,
-				outputDir,
-				workflow,
-				processSettings,
-			);
+			const jobState = jobStore.getJob(workflow, job.id);
+			if (!jobState) {
+				throw new Error(`Job ${job.id} no longer exists in ${workflow} queue`);
+			}
+
+			await processJobUseCase.execute(jobState, outputDir, workflow, processSettings);
 		},
 		[processJobUseCase, settingsRepository, workflow],
 	);
