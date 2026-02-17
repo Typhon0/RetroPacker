@@ -9,7 +9,7 @@
 
 import { useSignalValue } from "@/hooks/useSignalValue";
 import { jobStore } from "@/stores/JobStore";
-import type { WorkflowType } from "@/stores/useQueueStore";
+import type { WorkflowType } from "@/domain/types/workflow.types";
 import { Progress } from "@/components/ui/progress";
 import { CheckCircle, Loader2, AlertCircle, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -76,10 +76,10 @@ export function BatchProgressBar({ workflow }: BatchProgressBarProps) {
 		globalHasCompressionStats &&
 		(globalStats.jobsWithCompressionEstimate !== stats.jobsWithCompressionEstimate ||
 			Math.abs(globalStats.estimatedSavedBytes - stats.estimatedSavedBytes) >
-				1024 * 1024 ||
+			1024 * 1024 ||
 			Math.abs(
 				(globalStats.estimatedCompressionRatio ?? 0) -
-					(stats.estimatedCompressionRatio ?? 0),
+				(stats.estimatedCompressionRatio ?? 0),
 			) > 0.05);
 
 	return (

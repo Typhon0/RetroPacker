@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { useQueueStore } from "../stores/useQueueStore";
 import { jobStore } from "@/stores/JobStore";
 import { useSignalValue } from "@/hooks/useSignalValue";
 
@@ -8,9 +7,7 @@ import { useSignalValue } from "@/hooks/useSignalValue";
  */
 export function useSleepPrevention() {
 	const hasActiveJobs = useSignalValue(jobStore.hasActiveJobs);
-	const anyProcessing = useQueueStore((state) =>
-		Object.values(state.isProcessing).some(Boolean),
-	);
+	const anyProcessing = useSignalValue(jobStore.anyProcessing);
 
 	const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 	const lastActionRef = useRef<"acquire" | "release" | null>(null);
@@ -55,7 +52,7 @@ export function useSleepPrevention() {
 
 		return () => {
 			if (wakeLockRef.current) {
-				wakeLockRef.current.release().catch(() => {});
+				wakeLockRef.current.release().catch(() => { });
 				wakeLockRef.current = null;
 			}
 		};

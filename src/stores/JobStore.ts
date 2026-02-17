@@ -3,6 +3,7 @@ import { JobState } from "@/domain/entities/JobState";
 import type { JobProps } from "@/domain/entities/Job";
 import type { Platform } from "@/domain/types/platform.types";
 import type { JobStatus, WorkflowType } from "@/domain/types/workflow.types";
+import { schedulePersist, loadPersistedQueue, clearPersistedQueue } from "@/stores/QueuePersistence";
 
 const WORKFLOWS: readonly WorkflowType[] = [
 	"compress",
@@ -169,6 +170,14 @@ class JobStore {
 
 	readonly jobs: ReadonlySignal<JobState[]> = this.jobsSignal;
 
+	readonly isProcessing = createWorkflowRecord(() => signal(false));
+
+	readonly startRequests = createWorkflowRecord(() => signal<string[]>([]));
+
+	readonly anyProcessing: ReadonlySignal<boolean> = computed(() =>
+		WORKFLOWS.some((w) => this.isProcessing[w].value),
+	);
+
 	readonly queues = createWorkflowRecord((workflow) =>
 		computed(() =>
 			this.jobsSignal.value.filter((job) => job.workflow === workflow),
@@ -211,6 +220,7 @@ class JobStore {
 			return instance;
 		}
 		this.jobsSignal.value = [...this.jobsSignal.value, instance];
+		schedulePersist(this.jobsSignal.value);
 		return instance;
 	}
 
@@ -224,6 +234,11 @@ class JobStore {
 			remaining.push(job);
 		}
 		this.jobsSignal.value = remaining;
+		const reqs = this.startRequests[workflow];
+		if (reqs.value.includes(id)) {
+			reqs.value = reqs.value.filter((r) => r !== id);
+		}
+		schedulePersist(remaining);
 	}
 
 	clearQueue(workflow: WorkflowType): void {
@@ -236,12 +251,23 @@ class JobStore {
 			remaining.push(job);
 		}
 		this.jobsSignal.value = remaining;
+		this.isProcessing[workflow].value = false;
+		this.startRequests[workflow].value = [];
+		if (remaining.length === 0) {
+			void clearPersistedQueue();
+		} else {
+			schedulePersist(remaining);
+		}
 	}
 
 	updateJob(workflow: WorkflowType, id: string, updates: Partial<JobProps>): void {
 		const job = this.getJob(workflow, id);
 		if (!job) return;
 		job.applyUpdates(updates);
+		// Persist on status changes (structural)
+		if (updates.status !== undefined) {
+			schedulePersist(this.jobsSignal.value);
+		}
 	}
 
 	appendLog(workflow: WorkflowType, id: string, line: string): void {
@@ -255,6 +281,15 @@ class JobStore {
 			if (job.status.value !== "failed") continue;
 			job.resetForRetry();
 			retriedIds.push(job.id);
+		}
+		if (retriedIds.length > 0) {
+			const reqs = this.startRequests[workflow];
+			const current = new Set(reqs.value);
+			for (const id of retriedIds) {
+				current.add(id);
+			}
+			reqs.value = Array.from(current);
+			schedulePersist(this.jobsSignal.value);
 		}
 		return retriedIds;
 	}
@@ -277,6 +312,47 @@ class JobStore {
 
 	getWorkflowByJobId(id: string): WorkflowType | undefined {
 		return this.getJobById(id)?.workflow;
+	}
+
+	setProcessing(workflow: WorkflowType, value: boolean): void {
+		this.isProcessing[workflow].value = value;
+	}
+
+	requestStart(workflow: WorkflowType, id: string): void {
+		const reqs = this.startRequests[workflow];
+		if (!reqs.value.includes(id)) {
+			reqs.value = [...reqs.value, id];
+		}
+	}
+
+	consumeStartRequest(workflow: WorkflowType, id: string): void {
+		const reqs = this.startRequests[workflow];
+		const idx = reqs.value.indexOf(id);
+		if (idx !== -1) {
+			reqs.value = reqs.value.filter((r) => r !== id);
+		}
+	}
+
+	/** Restore queue from disk. Processing jobs marked as failed. */
+	async rehydrate(): Promise<void> {
+		try {
+			const persisted = await loadPersistedQueue();
+			if (!persisted) return;
+
+			let count = 0;
+			for (const [workflow, jobs] of Object.entries(persisted)) {
+				for (const jobProps of jobs) {
+					this.addJob(workflow as WorkflowType, jobProps);
+					count += 1;
+				}
+			}
+
+			if (count > 0) {
+				console.log(`[JobStore] Rehydrated ${count} jobs from disk`);
+			}
+		} catch (e) {
+			console.error("[JobStore] Failed to rehydrate queue:", e);
+		}
 	}
 }
 

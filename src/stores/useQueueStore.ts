@@ -1,11 +1,9 @@
 /**
- * Backward-compatible queue store exports.
+ * Backward-compatible type exports.
  *
- * Canonical state split:
- * - useJobStateStore: workflow control + structural queues
- * - JobStore/JobState: signal-backed per-job telemetry
+ * The Zustand bridge has been removed.
+ * All runtime state is now in JobStore (signals).
  */
 
-export { useJobStateStore as useQueueStore } from "@/stores/useJobStateStore";
-export type { Job } from "@/stores/useJobStateStore";
-export type { JobStatus, WorkflowType } from "@/domain/types/workflow.types";
+export type { WorkflowType, JobStatus } from "@/domain/types/workflow.types";
+export type { JobState as Job } from "@/domain/entities/JobState";

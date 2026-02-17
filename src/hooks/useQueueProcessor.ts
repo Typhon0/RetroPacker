@@ -1,12 +1,12 @@
 import { useEffect, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { useQueueStore, WorkflowType } from "../stores/useQueueStore";
 import { usePackerStore } from "../stores/usePackerStore";
 import { useRepositories } from "../presentation/context/RepositoryContext";
 import { ProcessJobUseCase } from "../domain/usecases/ProcessJobUseCase";
 import { jobStore } from "@/stores/JobStore";
 import { useSignalValue } from "@/hooks/useSignalValue";
 import type { JobState } from "@/domain/entities/JobState";
+import type { WorkflowType } from "@/domain/types/workflow.types";
 
 export interface QueueDispatchPlan {
 	processingCount: number;
@@ -77,13 +77,8 @@ export function planQueueDispatch(params: {
  */
 export function useQueueProcessor(workflow: WorkflowType) {
 	const queueStats = useSignalValue(jobStore.queueStats[workflow]);
-	const isProcessing = useQueueStore((state) => state.isProcessing[workflow]);
-	const startRequests = useQueueStore((state) => state.startRequests[workflow]);
-	const consumeStartRequest = useQueueStore(
-		(state) => state.consumeStartRequest,
-	);
-	const setProcessing = useQueueStore((state) => state.setProcessing);
-	const updateJob = useQueueStore((state) => state.updateJob);
+	const isProcessing = useSignalValue(jobStore.isProcessing[workflow]);
+	const startRequests = useSignalValue(jobStore.startRequests[workflow]);
 	const concurrency = usePackerStore((state) => state.concurrency);
 
 	const settings = usePackerStore(
@@ -116,7 +111,7 @@ export function useQueueProcessor(workflow: WorkflowType) {
 	useEffect(() => {
 		const processQueue = async () => {
 			const queue = jobStore.getQueue(workflow);
-			const latestStartRequests = useQueueStore.getState().startRequests[workflow];
+			const latestStartRequests = jobStore.startRequests[workflow].value;
 			const plan = planQueueDispatch({
 				queue,
 				startRequests: latestStartRequests,
@@ -125,11 +120,11 @@ export function useQueueProcessor(workflow: WorkflowType) {
 			});
 
 			for (const staleRequestId of plan.staleRequestIds) {
-				consumeStartRequest(workflow, staleRequestId);
+				jobStore.consumeStartRequest(workflow, staleRequestId);
 			}
 
 			if (plan.shouldAutoPause) {
-				setProcessing(workflow, false);
+				jobStore.setProcessing(workflow, false);
 				return;
 			}
 
@@ -138,7 +133,7 @@ export function useQueueProcessor(workflow: WorkflowType) {
 			}
 
 			if (plan.selectedRequestedId) {
-				consumeStartRequest(workflow, plan.selectedRequestedId);
+				jobStore.consumeStartRequest(workflow, plan.selectedRequestedId);
 			}
 
 			try {
@@ -153,7 +148,7 @@ export function useQueueProcessor(workflow: WorkflowType) {
 					});
 			} catch (e) {
 				console.error("Failed to start job", e);
-				updateJob(workflow, plan.nextJob.id, {
+				jobStore.updateJob(workflow, plan.nextJob.id, {
 					status: "failed",
 					errorMessage: "Could not determine output path or start job",
 				});
@@ -166,14 +161,12 @@ export function useQueueProcessor(workflow: WorkflowType) {
 		queueStats.pendingCount,
 		queueStats.processingCount,
 		startRequests,
-		consumeStartRequest,
-		setProcessing,
 		concurrency,
 		isProcessing,
 		workflow,
 		settings,
 		repositories.fileSystem,
 		processJobUseCase,
-		updateJob,
 	]);
 }
+

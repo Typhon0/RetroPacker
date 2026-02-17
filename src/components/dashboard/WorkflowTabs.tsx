@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePackerStore } from "@/stores/usePackerStore";
-import { WorkflowType } from "@/stores/useQueueStore";
+import type { WorkflowType } from "@/domain/types/workflow.types";
 import { DropZone } from "./DropZone";
 import { JobTable } from "./JobTable";
 import { SettingsToolbar } from "./SettingsToolbar";

@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from "react";
 import { Upload, FolderPlus, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { WorkflowType } from "@/stores/useQueueStore";
+import type { WorkflowType } from "@/domain/types/workflow.types";
 import { Button } from "@/components/ui/button";
 import { open } from "@tauri-apps/plugin-dialog";
 import { stat } from "@tauri-apps/plugin-fs";

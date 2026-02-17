@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import { getCurrentWindow, ProgressBarStatus } from "@tauri-apps/api/window";
-import { useQueueStore } from "../stores/useQueueStore";
 import { jobStore } from "@/stores/JobStore";
 import { useSignalValue } from "@/hooks/useSignalValue";
 
@@ -11,7 +10,7 @@ import { useSignalValue } from "@/hooks/useSignalValue";
  */
 export function useTaskbarProgress() {
 	const globalSummary = useSignalValue(jobStore.globalSummary);
-	const isProcessingMap = useQueueStore((state) => state.isProcessing);
+	const anyProcessing = useSignalValue(jobStore.anyProcessing);
 	const lastUpdateRef = useRef(0);
 	const pendingUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const lastPayloadRef = useRef<
@@ -40,7 +39,6 @@ export function useTaskbarProgress() {
 
 			lastUpdateRef.current = now;
 			const window = getCurrentWindow();
-			const anyProcessing = Object.values(isProcessingMap).some(Boolean);
 			let nextPayload:
 				| { status: ProgressBarStatus.None }
 				| { status: ProgressBarStatus.Normal; progress: number };
@@ -85,5 +83,6 @@ export function useTaskbarProgress() {
 				clearTimeout(pendingUpdateRef.current);
 			}
 		};
-	}, [globalSummary, isProcessingMap]);
+	}, [globalSummary, anyProcessing]);
 }
+

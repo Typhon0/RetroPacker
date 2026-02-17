@@ -29,11 +29,10 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { useQueueStore } from "@/stores/useQueueStore";
-import type { WorkflowType } from "@/stores/useQueueStore";
 import { ProcessRegistry } from "@/services/ProcessRegistry";
 import type { JobState } from "@/domain/entities/JobState";
 import type { Platform } from "@/domain/types/platform.types";
+import type { WorkflowType } from "@/domain/types/workflow.types";
 import { jobStore } from "@/stores/JobStore";
 import { useSignalValue } from "@/hooks/useSignalValue";
 
@@ -119,9 +118,6 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 		string,
 		JobRuntimeSnapshot
 	>;
-	const removeJob = useQueueStore((state) => state.removeJob);
-	const updateJob = useQueueStore((state) => state.updateJob);
-	const requestStart = useQueueStore((state) => state.requestStart);
 
 	const jobsById = useMemo(() => {
 		const map = new Map<string, JobState>();
@@ -146,7 +142,7 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 			}
 
 			if (status === "failed") {
-				updateJob(workflow, job.id, {
+				jobStore.updateJob(workflow, job.id, {
 					status: "pending",
 					progress: 0,
 					errorMessage: undefined,
@@ -157,9 +153,9 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 			}
 
 			ProcessRegistry.clearWorkflowCancellation(workflow);
-			requestStart(workflow, job.id);
+			jobStore.requestStart(workflow, job.id);
 		},
-		[requestStart, updateJob, workflow],
+		[workflow],
 	);
 
 	const handleRemoveJobById = useCallback(
@@ -174,9 +170,9 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 					console.warn("Failed to cancel job process", e);
 				}
 			}
-			removeJob(workflow, job.id);
+			jobStore.removeJob(workflow, job.id);
 		},
-		[removeJob, workflow],
+		[workflow],
 	);
 
 	const handleSelectJobById = useCallback(
@@ -189,14 +185,14 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 
 	const handleUpdatePlatformById = useCallback(
 		(jobId: string, platform: Platform | undefined) => {
-			updateJob(workflow, jobId, {
+			jobStore.updateJob(workflow, jobId, {
 				platformOverride: platform,
 				system: platform
 					? platform.charAt(0).toUpperCase() + platform.slice(1)
 					: undefined,
 			});
 		},
-		[updateJob, workflow],
+		[workflow],
 	);
 
 	const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -233,7 +229,7 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 
 					if (runtime.status === "pending" || runtime.status === "failed") {
 						if (runtime.status === "failed") {
-							updateJob(workflow, treeJob.id, {
+							jobStore.updateJob(workflow, treeJob.id, {
 								status: "pending",
 								progress: 0,
 								errorMessage: undefined,
@@ -255,10 +251,10 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 
 			ProcessRegistry.clearWorkflowCancellation(workflow);
 			for (const jobId of idsToStart) {
-				requestStart(workflow, jobId);
+				jobStore.requestStart(workflow, jobId);
 			}
 		},
-		[filteredJobIds, jobRuntimeById, requestStart, updateJob, workflow],
+		[filteredJobIds, jobRuntimeById, workflow],
 	);
 
 	const uniqueSystems = useMemo(() => {
@@ -402,7 +398,7 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 
 					const runtime = jobRuntimeById[job.id];
 					if (runtime?.status === "pending") {
-						updateJob(workflow, job.id, { platformOverride: platform });
+						jobStore.updateJob(workflow, job.id, { platformOverride: platform });
 					}
 				});
 				Object.values(node.children).forEach(applyToNode);
@@ -411,7 +407,7 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 			const targetNode = findNode(tree, path);
 			if (targetNode) applyToNode(targetNode);
 		},
-		[filteredJobIds, jobRuntimeById, tree, updateJob, workflow],
+		[filteredJobIds, jobRuntimeById, tree, workflow],
 	);
 
 	const getFolderOverrideForJob = useCallback(
@@ -479,10 +475,10 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 					}
 				}
 
-				removeJob(workflow, treeJob.id);
+				jobStore.removeJob(workflow, treeJob.id);
 			}
 		},
-		[filteredJobIds, jobRuntimeById, workflow, removeJob],
+		[filteredJobIds, jobRuntimeById, workflow],
 	);
 
 	const filteredRoot = useMemo(() => {
@@ -580,6 +576,20 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 		observer.observe(element);
 
 		return () => observer.disconnect();
+	}, []);
+
+	const rafIdRef = useRef(0);
+
+	const handleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
+		const target = event.currentTarget;
+		cancelAnimationFrame(rafIdRef.current);
+		rafIdRef.current = requestAnimationFrame(() => {
+			setScrollTop(target.scrollTop);
+		});
+	}, []);
+
+	useEffect(() => {
+		return () => cancelAnimationFrame(rafIdRef.current);
 	}, []);
 
 	const cumulativeHeights = useMemo(() => {
@@ -700,9 +710,7 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 			{/* Table Container */}
 			<div
 				ref={scrollContainerRef}
-				onScroll={(event) => {
-					setScrollTop(event.currentTarget.scrollTop);
-				}}
+				onScroll={handleScroll}
 				className="rounded-md border bg-card flex-1 overflow-y-auto min-h-0 relative"
 			>
 				<Table>

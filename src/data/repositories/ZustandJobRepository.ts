@@ -2,7 +2,6 @@ import type { IJobRepository } from "../../domain/repositories/IJobRepository";
 import type { JobProps, JobUpdate } from "../../domain/entities/Job";
 import type { WorkflowType } from "../../domain/types/workflow.types";
 import { jobStore } from "../../stores/JobStore";
-import { useQueueStore } from "../../stores/useQueueStore";
 
 export class ZustandJobRepository implements IJobRepository {
 	getJobs(workflow: WorkflowType): JobProps[] {
@@ -14,30 +13,30 @@ export class ZustandJobRepository implements IJobRepository {
 	}
 
 	addJob(workflow: WorkflowType, job: JobProps): void {
-		useQueueStore.getState().addJob(workflow, job);
+		jobStore.addJob(workflow, job);
 	}
 
 	updateJob(workflow: WorkflowType, id: string, updates: JobUpdate): void {
-		useQueueStore.getState().updateJob(workflow, id, updates);
+		jobStore.updateJob(workflow, id, updates);
 	}
 
 	removeJob(workflow: WorkflowType, id: string): void {
-		useQueueStore.getState().removeJob(workflow, id);
+		jobStore.removeJob(workflow, id);
 	}
 
 	clearQueue(workflow: WorkflowType): void {
-		useQueueStore.getState().clearQueue(workflow);
+		jobStore.clearQueue(workflow);
 	}
 
 	appendLog(workflow: WorkflowType, id: string, line: string): void {
-		useQueueStore.getState().appendLog(workflow, id, line);
+		jobStore.appendLog(workflow, id, line);
 	}
 
 	isProcessing(workflow: WorkflowType): boolean {
-		return useQueueStore.getState().isProcessing[workflow];
+		return jobStore.isProcessing[workflow].value;
 	}
 
 	setProcessing(workflow: WorkflowType, processing: boolean): void {
-		useQueueStore.getState().setProcessing(workflow, processing);
+		jobStore.setProcessing(workflow, processing);
 	}
 }

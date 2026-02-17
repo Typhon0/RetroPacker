@@ -1,12 +1,8 @@
 /**
- * FolderRow - Renders a folder row in the job table
- *
- * Single Responsibility: Only handles folder row rendering and interactions.
- *
- * @module components/dashboard/JobTable/FolderRow
+ * Renders a folder row with expand/collapse and platform override controls.
  */
 
-import type React from "react";
+import React from "react";
 import { TableRow, TableCell } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 
@@ -46,7 +42,7 @@ interface FolderRowProps {
 /**
  * Renders a folder row with expand/collapse, platform override, and start button.
  */
-export function FolderRow({
+function FolderRowComponent({
 	node,
 	depth,
 	isExpanded,
@@ -152,3 +148,5 @@ export function FolderRow({
 		</TableRow>
 	);
 }
+
+export const FolderRow = React.memo(FolderRowComponent);

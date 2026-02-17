@@ -6,7 +6,6 @@ import { useQueueProcessor } from "@/hooks/useQueueProcessor";
 import { useSignalValue } from "@/hooks/useSignalValue";
 import { useTaskbarProgress } from "@/hooks/useTaskbarProgress";
 import { useSleepPrevention } from "@/hooks/useSleepPrevention";
-import { useQueueStore } from "@/stores/useQueueStore";
 import { jobStore } from "@/stores/JobStore";
 import { Button } from "@/components/ui/button";
 import { Trash2, Play, Pause, RotateCcw } from "lucide-react";
@@ -36,21 +35,19 @@ function AppContent() {
 
 	const queue = useSignalValue(jobStore.queues[activeWorkflow]);
 	const queueStats = useSignalValue(jobStore.queueStats[activeWorkflow]);
-	const clearQueue = useQueueStore((state) => state.clearQueue);
-	const isProcessing = useQueueStore(
-		(state) => state.isProcessing[activeWorkflow],
-	);
-	const setProcessing = useQueueStore((state) => state.setProcessing);
-	const retryFailed = useQueueStore((state) => state.retryFailed);
+	const isProcessing = useSignalValue(jobStore.isProcessing[activeWorkflow]);
 
 	const failedCount = queueStats.failedCount;
 
 	// Ref to track initialization status to prevent strict mode double-invocations
 	const hasInitialized = useRef(false);
 
-	// Auto-detect concurrency on first load
+	// Initialization
 	useEffect(() => {
 		if (hasInitialized.current) return;
+
+		// Restore queue
+		void jobStore.rehydrate();
 
 		// Only auto-detect if we're on the default small value
 		if (
@@ -89,25 +86,25 @@ function AppContent() {
 			// Only clear the cancellation flag when we explicitly start
 			ProcessRegistry.clearWorkflowCancellation(activeWorkflow);
 		}
-		setProcessing(activeWorkflow, !isProcessing);
-	}, [activeWorkflow, isProcessing, setProcessing]);
+		jobStore.setProcessing(activeWorkflow, !isProcessing);
+	}, [activeWorkflow, isProcessing]);
 
 	const handleClearQueue = useCallback(async () => {
 		try {
 			// Fire-and-forget: don't await to avoid blocking UI
 			await ProcessRegistry.cancelAll(activeWorkflow);
-			clearQueue(activeWorkflow);
+			jobStore.clearQueue(activeWorkflow);
 			// Do NOT clear cancellation flag here. It must remain set
 			// until the user clicks Start again to prevent race conditions.
 		} catch (error) {
 			console.error("Failed to cancel processes during clear", error);
 		}
-	}, [activeWorkflow, clearQueue]);
+	}, [activeWorkflow]);
 
 	const handleRetryFailed = useCallback(() => {
 		ProcessRegistry.clearWorkflowCancellation(activeWorkflow);
-		retryFailed(activeWorkflow);
-	}, [activeWorkflow, retryFailed]);
+		jobStore.retryFailed(activeWorkflow);
+	}, [activeWorkflow]);
 
 	return (
 		<TooltipProvider>
