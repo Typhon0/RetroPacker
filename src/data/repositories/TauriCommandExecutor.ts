@@ -6,6 +6,7 @@
  */
 
 import { Command } from "@tauri-apps/plugin-shell";
+import { platform } from "@tauri-apps/plugin-os";
 import {
 	ICommandExecutor,
 	BinaryName,
@@ -89,9 +90,8 @@ export class TauriCommandExecutor implements ICommandExecutor {
 	 * Force-kill a process by PID using OS-level commands.
 	 */
 	async forceKillProcess(pid: number): Promise<void> {
-		const isWindows =
-			typeof navigator !== "undefined" &&
-			navigator.userAgent.toLowerCase().includes("windows");
+		const os = platform();
+		const isWindows = os === "windows";
 
 		try {
 			if (isWindows) {
@@ -113,11 +113,12 @@ export class TauriCommandExecutor implements ICommandExecutor {
 				const cmd = Command.create("kill", ["-9", pid.toString()]);
 				await cmd
 					.execute()
-					.then(() => {})
-					.catch(() => {});
+					.then(() => { })
+					.catch(() => { });
 			}
 		} catch {
 			// Ignore force-kill failures
 		}
 	}
 }
+

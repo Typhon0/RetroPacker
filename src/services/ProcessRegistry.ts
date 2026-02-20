@@ -41,13 +41,13 @@ export function register(
 
 	// Race condition fix: Check if job was cancelled while spawning
 	if (cancelledJobs.has(key)) {
-		terminateProcess(process).catch(() => {});
+		terminateProcess(process).catch(() => { });
 		return;
 	}
 
 	// Race condition fix: Check if entire workflow was cancelled
 	if (cancelledWorkflows.has(workflow)) {
-		terminateProcess(process).catch(() => {});
+		terminateProcess(process).catch(() => { });
 		return;
 	}
 
@@ -217,6 +217,16 @@ async function terminateProcess(process: SpawnedProcess): Promise<void> {
 	}
 }
 
+/**
+ * Reset all internal state. Intended for test isolation only.
+ */
+export function reset(): void {
+	processes.clear();
+	cancelledJobs.clear();
+	cancelledWorkflows.clear();
+	commandExecutor = null;
+}
+
 // Export as a namespace object for backward compatibility if needed,
 // but prefer named imports.
 export const ProcessRegistry = {
@@ -229,4 +239,5 @@ export const ProcessRegistry = {
 	cancelAll,
 	isWorkflowCancelled,
 	clearWorkflowCancellation,
+	reset,
 };

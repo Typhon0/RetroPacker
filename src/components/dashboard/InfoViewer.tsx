@@ -14,6 +14,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MetadataService } from "@/services/MetadataService";
+import { GameIdExtractor } from "@/services/GameIdExtractor";
+import { CoverArtService } from "@/services/CoverArtService";
 import { BinaryManagerService } from "@/services/BinaryManagerService";
 import { stat, open as openFile } from "@tauri-apps/plugin-fs";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -168,7 +170,7 @@ export function InfoViewer() {
 
 				// Extract game ID using the unified API
 				try {
-					gameId = await MetadataService.extractGameId(filePath, system);
+					gameId = await GameIdExtractor.extractGameId(filePath, system);
 				} catch (e) {
 					console.error("Failed to extract game ID:", e);
 				}
@@ -288,7 +290,7 @@ export function InfoViewer() {
 				console.log(`Fetching cover for ${name} (${system})`);
 				setIsCoverLoading(true); // Start cover spinner
 				try {
-					const coverUrl = await MetadataService.fetchCover(
+					const coverUrl = await CoverArtService.fetchCover(
 						gameId,
 						system,
 						filePath,
@@ -415,11 +417,10 @@ export function InfoViewer() {
 				className={`
                     border-2 border-dashed rounded-lg p-8 text-center cursor-pointer
                     transition-colors duration-200
-                    ${
-											isDragging
-												? "border-primary bg-primary/10"
-												: "border-muted-foreground/25 hover:border-muted-foreground/50 bg-muted/5"
-										}
+                    ${isDragging
+						? "border-primary bg-primary/10"
+						: "border-muted-foreground/25 hover:border-muted-foreground/50 bg-muted/5"
+					}
                 `}
 			>
 				<div className="flex flex-col items-center gap-2 text-muted-foreground">
@@ -593,16 +594,16 @@ export function InfoViewer() {
 												)}
 												{(gameInfo.dolphinStats.region ||
 													gameInfo.dolphinStats.country) && (
-													<div>
-														<span className="text-xs text-muted-foreground block mb-1">
-															Region
-														</span>
-														<span className="text-xs font-medium">
-															{gameInfo.dolphinStats.region} (
-															{gameInfo.dolphinStats.country})
-														</span>
-													</div>
-												)}
+														<div>
+															<span className="text-xs text-muted-foreground block mb-1">
+																Region
+															</span>
+															<span className="text-xs font-medium">
+																{gameInfo.dolphinStats.region} (
+																{gameInfo.dolphinStats.country})
+															</span>
+														</div>
+													)}
 												{gameInfo.dolphinStats.revision && (
 													<div>
 														<span className="text-xs text-muted-foreground block mb-1">
@@ -663,12 +664,12 @@ export function InfoViewer() {
 													<span className="text-xs font-mono text-muted-foreground">
 														{gameInfo.chdStats.logicalSize?.includes("bytes")
 															? formatFileSize(
-																	parseInt(
-																		gameInfo.chdStats.logicalSize
-																			.replace(/,/g, "")
-																			.split(" ")[0],
-																	),
-																)
+																parseInt(
+																	gameInfo.chdStats.logicalSize
+																		.replace(/,/g, "")
+																		.split(" ")[0],
+																),
+															)
 															: gameInfo.chdStats.logicalSize}
 													</span>
 												</div>
@@ -679,12 +680,12 @@ export function InfoViewer() {
 													<span className="text-xs font-mono text-muted-foreground">
 														{gameInfo.chdStats.chdSize?.includes("bytes")
 															? formatFileSize(
-																	parseInt(
-																		gameInfo.chdStats.chdSize
-																			.replace(/,/g, "")
-																			.split(" ")[0],
-																	),
-																)
+																parseInt(
+																	gameInfo.chdStats.chdSize
+																		.replace(/,/g, "")
+																		.split(" ")[0],
+																),
+															)
 															: gameInfo.chdStats.chdSize}
 													</span>
 												</div>
