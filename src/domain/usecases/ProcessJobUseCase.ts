@@ -33,6 +33,7 @@ export interface ProcessJobSettings {
 	readonly chd: ChdSettings;
 	readonly dolphin: DolphinSettings;
 	readonly deleteSourceAfterSuccess: boolean;
+	readonly skipExisting: boolean;
 }
 
 /**
@@ -144,6 +145,22 @@ export class ProcessJobUseCase {
 				usesDolphin,
 			);
 
+			// Skip if output file already exists and skipExisting is enabled
+			if (settings.skipExisting && (workflow === "compress" || workflow === "extract")) {
+				const outputIndex = args.indexOf("-o");
+				if (outputIndex !== -1 && outputIndex + 1 < args.length) {
+					const outputPath = args[outputIndex + 1];
+					if (await this.deps.fileSystem.exists(outputPath)) {
+						job.appendLog(`Skipped — output file already exists: ${outputPath}`);
+						job.setStatus("completed");
+						job.updateProgress(100, 0);
+						job.endTime.value = Date.now();
+						ProcessJobUseCase.spawnLock.delete(lockKey);
+						return;
+					}
+				}
+			}
+
 			job.appendLog(`Starting: ${binary} ${args.join(" ")}`);
 
 			// Set up progress simulation for DolphinTool (doesn't output progress)
@@ -181,6 +198,7 @@ export class ProcessJobUseCase {
 								job.setStatus("completed");
 								job.setErrorMessage(undefined);
 								job.updateProgress(100, 0);
+								job.endTime.value = Date.now();
 
 								// Delete source file if setting is enabled (compress/extract only)
 								if (
@@ -209,9 +227,11 @@ export class ProcessJobUseCase {
 								// Process was cancelled
 								job.setStatus("failed");
 								job.setErrorMessage("Cancelled");
+								job.endTime.value = Date.now();
 							} else {
 								job.setStatus("failed");
 								job.setErrorMessage(`Exited with code ${result.code}`);
+								job.endTime.value = Date.now();
 							}
 						} catch (error) {
 							console.error(
@@ -243,6 +263,7 @@ export class ProcessJobUseCase {
 							job.appendLog(`Error: ${error.message}`);
 							job.setStatus("failed");
 							job.setErrorMessage(error.message);
+							job.endTime.value = Date.now();
 						} catch (handlerError) {
 							console.error(
 								`[ProcessJobUseCase] onError handler failed for ${lockKey}:`,

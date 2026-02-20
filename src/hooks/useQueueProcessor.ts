@@ -90,6 +90,7 @@ export function useQueueProcessor(workflow: WorkflowType) {
 			chd: state.chd,
 			dolphin: state.dolphin,
 			deleteSourceAfterSuccess: state.deleteSourceAfterSuccess,
+			skipExisting: state.skipExisting,
 			outputDirectory: state.outputDirectory,
 		})),
 	);

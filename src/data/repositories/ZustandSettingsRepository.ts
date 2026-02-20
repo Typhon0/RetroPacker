@@ -35,6 +35,7 @@ export class ZustandSettingsRepository implements ISettingsRepository {
 			dolphin: state.dolphin,
 			platform: state.platform,
 			deleteSourceAfterSuccess: state.deleteSourceAfterSuccess,
+			skipExisting: state.skipExisting,
 		};
 	}
 
@@ -142,6 +143,7 @@ export class ZustandSettingsRepository implements ISettingsRepository {
 				dolphin: state.dolphin,
 				platform: state.platform,
 				deleteSourceAfterSuccess: state.deleteSourceAfterSuccess,
+				skipExisting: state.skipExisting,
 			});
 		});
 	}

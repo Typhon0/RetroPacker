@@ -136,6 +136,7 @@ const settings = {
 		extractGameOnly: false,
 	},
 	deleteSourceAfterSuccess: false,
+	skipExisting: false,
 };
 
 afterEach(() => {

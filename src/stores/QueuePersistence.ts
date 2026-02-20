@@ -35,6 +35,7 @@ interface PersistedJob {
     gameId?: string;
     gameTitle?: string;
     region?: string;
+    endTime?: number;
 }
 
 interface PersistedQueues {
@@ -72,6 +73,7 @@ function toPersistedJob(job: JobState): PersistedJob {
         gameId: job.gameId.value,
         gameTitle: job.gameTitle.value,
         region: job.region.value,
+        endTime: job.endTime.value,
     };
 }
 
@@ -112,6 +114,7 @@ function toRehydratedJobProps(pj: PersistedJob): JobProps | null {
         gameId: pj.gameId,
         gameTitle: pj.gameTitle,
         region: pj.region,
+        endTime: pj.endTime,
     };
 }
 

@@ -34,6 +34,7 @@ export class JobState {
 	readonly outputLog: Signal<readonly string[]>;
 	readonly errorMessage: Signal<string | undefined>;
 	readonly startTime: Signal<number | undefined>;
+	readonly endTime: Signal<number | undefined>;
 	readonly etaSeconds: Signal<number | undefined>;
 	readonly discGroup: Signal<string | undefined>;
 	readonly discNumber: Signal<number | undefined>;
@@ -46,6 +47,7 @@ export class JobState {
 
 	readonly isProcessing: ReadonlySignal<boolean>;
 	readonly isFailed: ReadonlySignal<boolean>;
+	readonly elapsedMs: ReadonlySignal<number | undefined>;
 
 	private logBuffer: string[] = [];
 	private flushTimer: ReturnType<typeof setTimeout> | undefined;
@@ -66,6 +68,7 @@ export class JobState {
 		this.outputLog = signal(props.outputLog.slice(-MAX_LOG_LINES_PER_JOB));
 		this.errorMessage = signal(props.errorMessage);
 		this.startTime = signal(props.startTime);
+		this.endTime = signal(props.endTime);
 		this.etaSeconds = signal(props.etaSeconds);
 		this.discGroup = signal(props.discGroup);
 		this.discNumber = signal(props.discNumber);
@@ -78,6 +81,12 @@ export class JobState {
 
 		this.isProcessing = computed(() => this.status.value === "processing");
 		this.isFailed = computed(() => this.status.value === "failed");
+		this.elapsedMs = computed(() => {
+			const start = this.startTime.value;
+			const end = this.endTime.value;
+			if (start === undefined || end === undefined) return undefined;
+			return end - start;
+		});
 	}
 
 	updateProgress(value: number, etaSeconds?: number): void {
@@ -139,6 +148,7 @@ export class JobState {
 		this.errorMessage.value = undefined;
 		this.etaSeconds.value = undefined;
 		this.startTime.value = undefined;
+		this.endTime.value = undefined;
 		this.compressionRatio.value = undefined;
 		this.clearLogs();
 	}
@@ -167,6 +177,7 @@ export class JobState {
 			this.errorMessage.value = updates.errorMessage;
 		}
 		if ("startTime" in updates) this.startTime.value = updates.startTime;
+		if ("endTime" in updates) this.endTime.value = updates.endTime;
 		if ("etaSeconds" in updates) this.etaSeconds.value = updates.etaSeconds;
 		if ("discGroup" in updates) this.discGroup.value = updates.discGroup;
 		if ("discNumber" in updates)
@@ -204,6 +215,7 @@ export class JobState {
 			errorMessage: this.errorMessage.value,
 			strategy: this.strategy,
 			startTime: this.startTime.value,
+			endTime: this.endTime.value,
 			etaSeconds: this.etaSeconds.value,
 			discGroup: this.discGroup.value,
 			discNumber: this.discNumber.value,

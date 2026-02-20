@@ -22,6 +22,7 @@ export interface JobProps {
 	readonly errorMessage?: string;
 	readonly strategy: CompressionStrategy;
 	readonly startTime?: number;
+	readonly endTime?: number;
 	readonly etaSeconds?: number;
 	readonly discGroup?: string;
 	readonly discNumber?: number;

@@ -13,6 +13,7 @@ import { usePackerStore } from "@/stores/usePackerStore";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { RepositoryProvider } from "@/presentation/context/RepositoryContext";
 import { ProcessRegistry } from "@/services/ProcessRegistry";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { cn } from "@/lib/utils";
 
 const MIN_CONCURRENCY = 1;
@@ -80,6 +81,9 @@ function AppContent() {
 		},
 		[setConcurrency],
 	);
+
+	// Global keyboard shortcuts
+	useKeyboardShortcuts(activeWorkflow, isProcessing);
 
 	const handleToggleProcessing = useCallback(() => {
 		if (!isProcessing) {

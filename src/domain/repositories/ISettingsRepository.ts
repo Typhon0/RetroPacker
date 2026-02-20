@@ -26,6 +26,8 @@ export interface AppSettings {
 	readonly platform: Platform;
 	/** Whether to delete source files after success. */
 	readonly deleteSourceAfterSuccess: boolean;
+	/** Whether to skip processing if output file already exists. */
+	readonly skipExisting: boolean;
 }
 
 /**

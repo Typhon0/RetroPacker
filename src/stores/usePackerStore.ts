@@ -37,6 +37,9 @@ interface PackerState {
 	// Delete source setting
 	deleteSourceAfterSuccess: boolean;
 
+	// Skip existing output files
+	skipExisting: boolean;
+
 	// Output directory (empty = same as source)
 	outputDirectory: string;
 
@@ -61,6 +64,8 @@ interface PackerState {
 	setPlatform: (platform: Platform) => void;
 
 	setDeleteSourceAfterSuccess: (val: boolean) => void;
+
+	setSkipExisting: (val: boolean) => void;
 
 	setOutputDirectory: (dir: string) => void;
 }
@@ -93,6 +98,8 @@ export const usePackerStore = create<PackerState>()(
 
 			deleteSourceAfterSuccess: false,
 
+			skipExisting: false,
+
 			outputDirectory: "",
 
 			setActiveWorkflow: (activeWorkflow) => set({ activeWorkflow }),
@@ -115,11 +122,13 @@ export const usePackerStore = create<PackerState>()(
 			setDeleteSourceAfterSuccess: (deleteSourceAfterSuccess) =>
 				set({ deleteSourceAfterSuccess }),
 
+			setSkipExisting: (skipExisting) => set({ skipExisting }),
+
 			setOutputDirectory: (outputDirectory) => set({ outputDirectory }),
 		}),
 		{
 			name: "retropacker-settings",
-			version: 4,
+			version: 5,
 		},
 	),
 );
