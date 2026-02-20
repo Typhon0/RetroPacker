@@ -4,9 +4,9 @@
 	"version": "0.1.0",
 	"identifier": "com.retropacker.app",
 	"build": {
-		"beforeDevCommand": "pnpm dev",
+		"beforeDevCommand": "npm run dev",
 		"devUrl": "http://localhost:1420",
-		"beforeBuildCommand": "pnpm build",
+		"beforeBuildCommand": "npm run build",
 		"frontendDist": "../dist"
 	},
 	"app": {
@@ -31,6 +31,9 @@
 			"icons/icon.icns",
 			"icons/icon.ico"
 		],
-		"externalBin": ["binaries/chdman", "binaries/DolphinTool"]
+		"externalBin": [
+			"binaries/chdman",
+			"binaries/DolphinTool"
+		]
 	}
 }

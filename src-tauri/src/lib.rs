@@ -29,7 +29,7 @@ fn read_file_bytes(path: String, offset: Option<u64>, length: Option<usize>) -> 
 fn compute_file_hash(path: String) -> Result<String, String> {
     let mut file = File::open(&path).map_err(|e| format!("Failed to open file: {e}"))?;
     let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 8192];
+    let mut buffer = vec![0u8; 131072]; // 128KB buffer for faster hashing
 
     loop {
         let bytes_read = file

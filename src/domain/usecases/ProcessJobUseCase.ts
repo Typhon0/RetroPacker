@@ -47,7 +47,7 @@ export class ProcessJobUseCase {
 	private static readonly MIN_PROGRESS_DELTA_PERCENT = 0.25;
 	private static readonly PROGRESS_UPDATE_MIN_INTERVAL_MS = 150;
 
-	constructor(private readonly deps: ProcessJobDependencies) {}
+	constructor(private readonly deps: ProcessJobDependencies) { }
 
 	/**
 	 * Execute the job processing.
@@ -89,7 +89,7 @@ export class ProcessJobUseCase {
 		}
 		ProcessJobUseCase.spawnLock.add(lockKey);
 
-		const { commandExecutor, notificationService } = this.deps;
+		const { commandExecutor } = this.deps;
 		let progressInterval: ReturnType<typeof setInterval> | undefined;
 		let cleanupOwnedByCallbacks = false;
 		let hasCleanedUp = false;
@@ -205,11 +205,6 @@ export class ProcessJobUseCase {
 										);
 									}
 								}
-
-								await notificationService.notifySuccess(
-									`${this.getWorkflowLabel(workflow)} Completed`,
-									`${job.filename} has finished processing.`,
-								);
 							} else if (wasCancelled || result.signal !== null) {
 								// Process was cancelled
 								job.setStatus("failed");
@@ -217,10 +212,6 @@ export class ProcessJobUseCase {
 							} else {
 								job.setStatus("failed");
 								job.setErrorMessage(`Exited with code ${result.code}`);
-								await notificationService.notifyFailure(
-									`${this.getWorkflowLabel(workflow)} Failed`,
-									`${job.filename} failed to process.`,
-								);
 							}
 						} catch (error) {
 							console.error(
@@ -252,10 +243,6 @@ export class ProcessJobUseCase {
 							job.appendLog(`Error: ${error.message}`);
 							job.setStatus("failed");
 							job.setErrorMessage(error.message);
-							await notificationService.notifyFailure(
-								`${this.getWorkflowLabel(workflow)} Failed`,
-								`${job.filename}: ${error.message}`,
-							);
 						} catch (handlerError) {
 							console.error(
 								`[ProcessJobUseCase] onError handler failed for ${lockKey}:`,
@@ -680,24 +667,6 @@ export class ProcessJobUseCase {
 			lastProgress = nextProgress;
 			lastEmitAt = now;
 		};
-	}
-
-	/**
-	 * Get human-readable label for workflow.
-	 */
-	private getWorkflowLabel(workflow: WorkflowType): string {
-		switch (workflow) {
-			case "compress":
-				return "Compression";
-			case "extract":
-				return "Extraction";
-			case "verify":
-				return "Verification";
-			case "info":
-				return "Info";
-			default:
-				return "";
-		}
 	}
 }
 

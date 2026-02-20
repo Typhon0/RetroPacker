@@ -5,8 +5,10 @@ import { useRepositories } from "../presentation/context/RepositoryContext";
 import { ProcessJobUseCase } from "../domain/usecases/ProcessJobUseCase";
 import { jobStore } from "@/stores/JobStore";
 import { useSignalValue } from "@/hooks/useSignalValue";
+import { usePrevious } from "./usePrevious";
 import type { JobState } from "@/domain/entities/JobState";
 import type { WorkflowType } from "@/domain/types/workflow.types";
+
 
 export interface QueueDispatchPlan {
 	processingCount: number;
@@ -107,6 +109,38 @@ export function useQueueProcessor(workflow: WorkflowType) {
 			repositories.fileSystem,
 		],
 	);
+
+	const prevIsProcessing = usePrevious(isProcessing);
+
+	// Batch completion notification
+	useEffect(() => {
+		// If we were processing, but now we're not, and the queue has jobs,
+		// and there are no more pending/processing jobs...
+		if (
+			prevIsProcessing === true &&
+			isProcessing === false &&
+			queueStats.queueLength > 0 &&
+			queueStats.pendingCount === 0 &&
+			queueStats.processingCount === 0
+		) {
+			const label = workflow.charAt(0).toUpperCase() + workflow.slice(1);
+			const text =
+				queueStats.failedCount > 0
+					? `Batch ${label} complete with ${queueStats.failedCount} failures.`
+					: `Batch ${label} completed successfully!`;
+
+			repositories.notificationService.notifySuccess(`${label} Complete`, text).catch();
+		}
+	}, [
+		isProcessing,
+		prevIsProcessing,
+		queueStats.queueLength,
+		queueStats.pendingCount,
+		queueStats.processingCount,
+		queueStats.failedCount,
+		workflow,
+		repositories.notificationService,
+	]);
 
 	useEffect(() => {
 		const processQueue = async () => {

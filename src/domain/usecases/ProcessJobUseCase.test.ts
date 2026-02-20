@@ -19,7 +19,7 @@ class TestCommandExecutor implements ICommandExecutor {
 			args: string[],
 			callbacks: CommandCallbacks,
 		) => Promise<SpawnedProcess>,
-	) {}
+	) { }
 
 	spawn(
 		binary: BinaryName,
@@ -84,8 +84,8 @@ function createNotificationServiceSpy(): {
 	notifySuccess: ReturnType<typeof vi.fn>;
 	notifyFailure: ReturnType<typeof vi.fn>;
 } {
-	const notifySuccess = vi.fn(async () => {});
-	const notifyFailure = vi.fn(async () => {});
+	const notifySuccess = vi.fn(async () => { });
+	const notifyFailure = vi.fn(async () => { });
 
 	return {
 		notifySuccess,
@@ -180,7 +180,7 @@ describe("ProcessJobUseCase", () => {
 		expect(job.progress.value).toBe(100);
 		expect(job.compressionRatio.value).toBeCloseTo(77.3, 1);
 		expect(job.errorMessage.value).toBeUndefined();
-		expect(notifications.notifySuccess).toHaveBeenCalledTimes(1);
+		// Per-job notifications were removed; batch notifications are now in useQueueProcessor
 		expect(notifications.notifyFailure).not.toHaveBeenCalled();
 
 		job.dispose();
