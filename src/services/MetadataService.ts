@@ -1,4 +1,4 @@
-import { mkdir, exists, readDir, open, SeekMode } from "@tauri-apps/plugin-fs";
+import { mkdir, exists, open, SeekMode } from "@tauri-apps/plugin-fs";
 import { BinaryManagerService } from "./BinaryManagerService";
 import { appDataDir, join, dirname } from "@tauri-apps/api/path";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -8,23 +8,28 @@ import type { DetectedSystem } from "@/domain/types/platform.types";
 
 class AsyncLimiter {
 	private active = 0;
-	private queue: Array<() => void> = [];
+	private readonly pending: Array<() => void> = [];
 
-	constructor(private readonly limit: number) {}
+	constructor(private readonly limit: number) { }
 
 	private async acquire(): Promise<void> {
 		if (this.active < this.limit) {
 			this.active += 1;
 			return;
 		}
-		await new Promise<void>((resolve) => this.queue.push(resolve));
-		this.active += 1;
+		// Park until a slot opens. The slot is reserved by the
+		// resolver in release(), so we don't increment here.
+		await new Promise<void>((resolve) => this.pending.push(resolve));
 	}
 
 	private release(): void {
-		this.active = Math.max(0, this.active - 1);
-		const next = this.queue.shift();
-		if (next) next();
+		const next = this.pending.shift();
+		if (next) {
+			// Hand the slot directly to the next waiter (active count stays the same)
+			next();
+		} else {
+			this.active = Math.max(0, this.active - 1);
+		}
 	}
 
 	async run<T>(fn: () => Promise<T>): Promise<T> {
@@ -311,20 +316,16 @@ export class MetadataService {
 			const dir = await dirname(gamePath);
 			const name = gamePath.split(/[\\/]/).pop()?.split(".").shift();
 
-			const files = await readDir(dir);
 			const candidates = ["cover", "folder", "front", "box", name];
 			const extensions = ["jpg", "png", "jpeg", "bmp"];
 
-			for (const file of files) {
-				if (!file.name) continue;
-				const lowerName = file.name.toLowerCase();
-
-				for (const cand of candidates) {
-					if (!cand) continue;
-					for (const ext of extensions) {
-						if (lowerName === `${cand.toLowerCase()}.${ext}`) {
-							return await join(dir, file.name);
-						}
+			// Check specific filenames via exists() instead of listing the directory
+			for (const cand of candidates) {
+				if (!cand) continue;
+				for (const ext of extensions) {
+					const candidatePath = await join(dir, `${cand}.${ext}`);
+					if (await exists(candidatePath)) {
+						return candidatePath;
 					}
 				}
 			}
@@ -437,24 +438,16 @@ export class MetadataService {
 	}
 
 	/**
-	 * Fire HEAD requests for all URLs concurrently.
+	 * Try HEAD requests sequentially for each URL.
 	 * Returns the first URL that responds 200, or null if all fail.
+	 * Sequential to avoid firing dozens of HEAD requests simultaneously.
 	 */
 	private static async checkFirstUrl(urls: string[]): Promise<string | null> {
-		if (urls.length === 0) return null;
-
-		try {
-			return await Promise.any(
-				urls.map(async (url) => {
-					const ok = await MetadataService.checkUrl(url);
-					if (ok) return url;
-					throw new Error("not found");
-				}),
-			);
-		} catch {
-			// AggregateError — all URLs failed
-			return null;
+		for (const url of urls) {
+			const ok = await MetadataService.checkUrl(url);
+			if (ok) return url;
 		}
+		return null;
 	}
 
 	private static getGameTdbRegions(gameId: string): string[] {

@@ -168,6 +168,9 @@ function toQueueSnapshot(
 class JobStore {
 	private readonly jobsSignal = signal<JobState[]>([]);
 
+	/** O(1) lookup index keyed by "workflow:id" */
+	private readonly jobIndex = new Map<string, JobState>();
+
 	readonly jobs: ReadonlySignal<JobState[]> = this.jobsSignal;
 
 	readonly isProcessing = createWorkflowRecord(() => signal(false));
@@ -216,15 +219,18 @@ class JobStore {
 
 	addJob(workflow: WorkflowType, job: JobProps | JobState): JobState {
 		const instance = job instanceof JobState ? job : new JobState(workflow, job);
-		if (this.getJob(workflow, instance.id)) {
+		const key = `${workflow}:${instance.id}`;
+		if (this.jobIndex.has(key)) {
 			return instance;
 		}
+		this.jobIndex.set(key, instance);
 		this.jobsSignal.value = [...this.jobsSignal.value, instance];
 		schedulePersist(this.jobsSignal.value);
 		return instance;
 	}
 
 	removeJob(workflow: WorkflowType, id: string): void {
+		this.jobIndex.delete(`${workflow}:${id}`);
 		const remaining: JobState[] = [];
 		for (const job of this.jobsSignal.value) {
 			if (job.workflow === workflow && job.id === id) {
@@ -245,6 +251,7 @@ class JobStore {
 		const remaining: JobState[] = [];
 		for (const job of this.jobsSignal.value) {
 			if (job.workflow === workflow) {
+				this.jobIndex.delete(`${workflow}:${job.id}`);
 				job.dispose();
 				continue;
 			}
@@ -303,11 +310,16 @@ class JobStore {
 	}
 
 	getJob(workflow: WorkflowType, id: string): JobState | undefined {
-		return this.queues[workflow].value.find((job) => job.id === id);
+		return this.jobIndex.get(`${workflow}:${id}`);
 	}
 
 	getJobById(id: string): JobState | undefined {
-		return this.jobsSignal.value.find((job) => job.id === id);
+		// Try each workflow's key since we don't know the workflow
+		for (const w of WORKFLOWS) {
+			const job = this.jobIndex.get(`${w}:${id}`);
+			if (job) return job;
+		}
+		return undefined;
 	}
 
 	getWorkflowByJobId(id: string): WorkflowType | undefined {
