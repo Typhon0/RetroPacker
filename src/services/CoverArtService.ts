@@ -187,8 +187,24 @@ export class CoverArtService {
         system: string,
     ): Promise<string | null> {
         const repo = CoverArtService.mapSystemToLibRetro(system);
-        if (!repo) return null;
 
+        // CHD is a generic container — try all disc-based system repos
+        const repos = repo
+            ? [repo]
+            : CoverArtService.getAllDiscSystemLibRetroRepos();
+        if (repos.length === 0) return null;
+
+        for (const r of repos) {
+            const result = await CoverArtService.tryFetchLibRetroForRepo(filename, r);
+            if (result) return result;
+        }
+        return null;
+    }
+
+    private static async tryFetchLibRetroForRepo(
+        filename: string,
+        repo: string,
+    ): Promise<string | null> {
         const base = `https://raw.githubusercontent.com/libretro-thumbnails/${repo}/master/Named_Boxarts`;
 
         const cleanName = filename.replace(
@@ -196,7 +212,7 @@ export class CoverArtService {
             "",
         );
 
-        const exact = cleanName.replace(/[&*/:`<>?|\\"]/g, "_");
+        const exact = cleanName.replace(/[&*/:`<>?|\\\"]/g, "_");
         const noRegion = exact.replace(/\s*\(.*?\)\s*/g, "").trim();
         const safe = noRegion.replace(/\s+/g, "_");
 
@@ -213,6 +229,18 @@ export class CoverArtService {
             console.log(`[CoverArt] Found LibRetro match: ${result}`);
         }
         return result;
+    }
+
+    private static getAllDiscSystemLibRetroRepos(): string[] {
+        return [
+            "Sony_-_PlayStation_2",
+            "Sony_-_PlayStation",
+            "Sony_-_PlayStation_Portable",
+            "Sega_-_Dreamcast",
+            "Sega_-_Saturn",
+            "Nintendo_-_GameCube",
+            "Nintendo_-_Wii",
+        ];
     }
 
     private static async scrapeGameTDB(

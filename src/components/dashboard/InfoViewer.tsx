@@ -479,11 +479,11 @@ export function InfoViewer() {
 								{/* Cover Art Column */}
 								<div className="flex-shrink-0 mx-auto md:mx-0">
 									{gameInfo.coverPath ? (
-										<div className="w-48 h-64 rounded-lg overflow-hidden border-2 border-border shadow-lg">
+										<div className="flex justify-center md:block">
 											<img
 												src={gameInfo.coverPath}
 												alt="Game Cover"
-												className="w-full h-full object-cover"
+												className="max-h-64 max-w-48 w-auto h-auto rounded-lg border-2 border-border shadow-lg object-contain"
 												onError={(e) => {
 													(e.target as HTMLImageElement).style.display = "none";
 												}}
