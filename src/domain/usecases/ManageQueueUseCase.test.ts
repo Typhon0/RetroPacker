@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { ManageQueueUseCase, WORKFLOW_FILE_CONFIGS } from "./ManageQueueUseCase";
 import { DetectSystemUseCase } from "./DetectSystemUseCase";
 import type { IJobRepository } from "../repositories/IJobRepository";
@@ -91,10 +91,12 @@ describe("ManageQueueUseCase", () => {
         });
 
         it("rejects files with unsupported extensions", async () => {
+            const spy = vi.spyOn(console, "warn").mockImplementation(() => { });
             const { useCase, jobRepository } = createUseCase();
             await useCase.addFile("compress", "/roms/readme.txt", "readme.txt", 100);
 
             expect(jobRepository.addJob).not.toHaveBeenCalled();
+            spy.mockRestore();
         });
 
         it("assigns createdvd strategy for ISO files", async () => {
@@ -190,6 +192,7 @@ describe("ManageQueueUseCase", () => {
         });
 
         it("skips invalid extensions in batch", async () => {
+            const spy = vi.spyOn(console, "warn").mockImplementation(() => { });
             const { useCase, jobRepository } = createUseCase();
             await useCase.addFiles("compress", [
                 "/roms/game.iso",
@@ -198,6 +201,7 @@ describe("ManageQueueUseCase", () => {
             ]);
 
             expect(jobRepository.addJob).toHaveBeenCalledTimes(2);
+            spy.mockRestore();
         });
     });
 

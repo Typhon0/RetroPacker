@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JobState } from "@/domain/entities/JobState";
 import { ProcessJobUseCase } from "@/domain/usecases/ProcessJobUseCase";
 import type {
@@ -181,6 +181,11 @@ const settings = {
 
 afterEach(() => {
 	ProcessRegistry.reset();
+	vi.useRealTimers();
+});
+
+beforeEach(() => {
+	vi.useFakeTimers({ shouldAdvanceTime: true });
 });
 
 // ─── Core lifecycle ──────────────────────────────────────────
@@ -260,6 +265,7 @@ describe("ProcessJobUseCase", () => {
 	});
 
 	it("skips execution when workflow is cancelled before start", async () => {
+		const spy = vi.spyOn(console, "log").mockImplementation(() => { });
 		const job = createJob("job-skipped");
 		const notifications = createNotificationServiceSpy();
 		const commandExecutor = new TestCommandExecutor(async () => {
@@ -279,6 +285,7 @@ describe("ProcessJobUseCase", () => {
 		expect(job.progress.value).toBe(0);
 		expect(notifications.notifySuccess).not.toHaveBeenCalled();
 		job.dispose();
+		spy.mockRestore();
 	});
 });
 

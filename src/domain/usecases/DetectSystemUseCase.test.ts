@@ -150,12 +150,14 @@ describe("DetectSystemUseCase", () => {
         });
 
         it("handles readBytes error gracefully, falls back to PS2 for ISO", async () => {
+            const spy = vi.spyOn(console, "warn").mockImplementation(() => { });
             const failingRead = vi
                 .fn()
                 .mockRejectedValue(new Error("File not found"));
             const uc = createUseCase(failingRead);
             const result = await uc.execute("/roms/game.iso");
             expect(result).toBe("PS2");
+            spy.mockRestore();
         });
     });
 
