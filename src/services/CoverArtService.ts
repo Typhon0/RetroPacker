@@ -216,11 +216,15 @@ export class CoverArtService {
         const noRegion = exact.replace(/\s*\(.*?\)\s*/g, "").trim();
         const safe = noRegion.replace(/\s+/g, "_");
 
+        const noExtraCountries = exact.replace(/,\s*[^)]+/g, "");
+
         const candidateNames = new Set([
             `${encodeURIComponent(exact)}.png`,
+            `${encodeURIComponent(noExtraCountries)}.png`,
             `${encodeURIComponent(noRegion)}.png`,
             `${encodeURIComponent(safe)}.png`,
             `${encodeURIComponent(exact.replace(/_v[\d\.]+$/, ""))}.png`,
+            `${encodeURIComponent(noExtraCountries.replace(/_v[\d\.]+$/, ""))}.png`,
         ]);
 
         const urls = [...candidateNames].map((cand) => `${base}/${cand}`);

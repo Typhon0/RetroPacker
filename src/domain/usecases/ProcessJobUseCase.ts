@@ -585,7 +585,7 @@ export class ProcessJobUseCase {
 		}
 
 		const match = line.match(
-			/(?:Compressing|Extracting|Processing),\s+(\d+\.?\d*)%\s+complete/,
+			/(?:Compressing|Extracting|Processing|Verifying),\s+(\d+\.?\d*)%\s+complete/,
 		);
 		if (match) {
 			const percentage = parseFloat(match[1]);
@@ -645,7 +645,7 @@ export class ProcessJobUseCase {
 		const mbSize = job.originalSize / (1024 * 1024);
 		const estSeconds = Math.max(10, mbSize / 4); // 4MB/s estimate
 		const incrementPerSec = 100 / estSeconds;
-		let simulatedProgress = job.progress.value;
+		let simulatedProgress = Number(job.progress.peek()) || 0;
 
 		return setInterval(() => {
 			if (job.status.value !== "processing") {
@@ -653,7 +653,7 @@ export class ProcessJobUseCase {
 			}
 
 			simulatedProgress = Math.min(99, simulatedProgress + incrementPerSec / 2);
-			if (simulatedProgress > job.progress.value) {
+			if (simulatedProgress > (Number(job.progress.peek()) || 0)) {
 				emitProgress(
 					simulatedProgress,
 					Math.max(0, estSeconds - (simulatedProgress / 100) * estSeconds),

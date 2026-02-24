@@ -107,7 +107,7 @@ export class GameIdExtractor {
         try {
             file = (await open(filePath, { read: true })) as ReadableHandle;
 
-            const buffer = new Uint8Array(65536);
+            const buffer = new Uint8Array(2 * 1024 * 1024);
             await file.read(buffer);
             const text = new TextDecoder("ascii").decode(buffer);
 
