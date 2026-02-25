@@ -178,6 +178,9 @@ export class ProcessJobUseCase {
 					}
 				},
 				onStderr: (line) => {
+					if (usesDolphin && this.shouldIgnoreDolphinStderr(line)) {
+						return;
+					}
 					job.appendLog(`[stderr] ${line}`);
 					if (!usesDolphin) {
 						this.parseProgress(line, job, emitProgress);
@@ -633,6 +636,11 @@ export class ProcessJobUseCase {
 		if (Object.keys(updates).length > 0) {
 			job.applyUpdates(updates);
 		}
+	}
+
+	private shouldIgnoreDolphinStderr(line: string): boolean {
+		const normalized = line.trim().toLowerCase();
+		return normalized.includes("no bundle id found");
 	}
 
 	/**

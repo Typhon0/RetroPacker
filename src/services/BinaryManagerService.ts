@@ -13,12 +13,8 @@ export class BinaryManagerService {
 		binary: "chdman" | "dolphintool", // Updated to lowercase to match typical usage, though "DolphinTool" is the file name usually. Keeping strict type.
 		args: string[],
 	): Command<string> {
-		// mapped in tauri.conf.json -> externalBin
-		const binaryMap: Record<string, string> = {
-			chdman: "binaries/chdman",
-			dolphintool: "binaries/DolphinTool", // Matches config exactly
-		};
-		return Command.sidecar(binaryMap[binary], args);
+		const executableName = binary === "chdman" ? "chdman" : "DolphinTool";
+		return Command.sidecar(`binaries/${executableName}`, args);
 	}
 
 	/**

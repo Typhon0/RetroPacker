@@ -20,7 +20,27 @@
 					"args": true
 				},
 				{
+					"name": "binaries/chdman-aarch64-apple-darwin",
+					"sidecar": true,
+					"args": true
+				},
+				{
+					"name": "binaries/chdman-x86_64-apple-darwin",
+					"sidecar": true,
+					"args": true
+				},
+				{
 					"name": "binaries/DolphinTool",
+					"sidecar": true,
+					"args": true
+				},
+				{
+					"name": "binaries/DolphinTool-aarch64-apple-darwin",
+					"sidecar": true,
+					"args": true
+				},
+				{
+					"name": "binaries/DolphinTool-x86_64-apple-darwin",
 					"sidecar": true,
 					"args": true
 				},
@@ -60,7 +80,27 @@
 					"args": true
 				},
 				{
+					"name": "binaries/chdman-aarch64-apple-darwin",
+					"sidecar": true,
+					"args": true
+				},
+				{
+					"name": "binaries/chdman-x86_64-apple-darwin",
+					"sidecar": true,
+					"args": true
+				},
+				{
 					"name": "binaries/DolphinTool",
+					"sidecar": true,
+					"args": true
+				},
+				{
+					"name": "binaries/DolphinTool-aarch64-apple-darwin",
+					"sidecar": true,
+					"args": true
+				},
+				{
+					"name": "binaries/DolphinTool-x86_64-apple-darwin",
 					"sidecar": true,
 					"args": true
 				},

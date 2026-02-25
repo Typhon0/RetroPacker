@@ -464,6 +464,41 @@ describe("ProcessJobUseCase tool selection", () => {
 		job.dispose();
 	});
 
+	it("ignores benign DolphinTool bundle-id stderr noise", async () => {
+		const job = createJob("dolphin-stderr-noise", {
+			system: "GameCube",
+			path: "/games/luigi.iso",
+			filename: "luigi.iso",
+		});
+
+		const notifications = createNotificationServiceSpy();
+		const commandExecutor = new TestCommandExecutor(
+			async (_binary, _args, callbacks) => {
+				setTimeout(() => {
+					callbacks.onStderr?.("No bundle id found");
+					callbacks.onClose?.({ code: 0, signal: null });
+				}, 0);
+				return { pid: 777, async kill() { } };
+			},
+		);
+
+		const useCase = new ProcessJobUseCase({
+			commandExecutor,
+			notificationService: notifications.service,
+			fileSystem: baseFileSystem,
+		});
+
+		await useCase.execute(job, "/output", "compress", settings);
+
+		await vi.waitFor(() => {
+			expect(job.status.value).toBe("completed");
+		});
+
+		const logs = job.toJobProps().outputLog;
+		expect(logs.some((line) => line.includes("No bundle id found"))).toBe(false);
+		job.dispose();
+	});
+
 	it("uses chdman for PS2 system", async () => {
 		const job = createJob("chdman-ps2", { system: "PS2" });
 		const { executor, spawnedBinary } = createCapturingExecutor();
