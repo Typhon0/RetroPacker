@@ -44,6 +44,7 @@ export class JobState {
 	readonly gameId: Signal<string | undefined>;
 	readonly gameTitle: Signal<string | undefined>;
 	readonly region: Signal<string | undefined>;
+	readonly indeterminate: Signal<boolean>;
 
 	readonly isProcessing: ReadonlySignal<boolean>;
 	readonly isFailed: ReadonlySignal<boolean>;
@@ -78,6 +79,7 @@ export class JobState {
 		this.gameId = signal(props.gameId);
 		this.gameTitle = signal(props.gameTitle);
 		this.region = signal(props.region);
+		this.indeterminate = signal(false);
 
 		this.isProcessing = computed(() => this.status.value === "processing");
 		this.isFailed = computed(() => this.status.value === "failed");
@@ -150,6 +152,7 @@ export class JobState {
 		this.startTime.value = undefined;
 		this.endTime.value = undefined;
 		this.compressionRatio.value = undefined;
+		this.indeterminate.value = false;
 		this.clearLogs();
 	}
 

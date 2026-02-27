@@ -84,13 +84,16 @@ function estimateSavedBytes(originalSize: number, compressionRatio: number): num
 const JobProgressCell = React.memo(({ job }: { job: JobState }) => {
 	const progress = useSignalValue(job.progress);
 	const status = useSignalValue(job.status);
+	const indeterminate = useSignalValue(job.indeterminate);
 
 	return (
 		<TableCell className="w-[25%]">
 			<div className="flex flex-col gap-1">
-				<Progress value={progress} className="h-2" />
+				<Progress value={progress} indeterminate={indeterminate && status === "processing"} className="h-2" />
 				{status === "processing" && (
-					<span className="text-xs text-muted-foreground">{progress.toFixed(1)}%</span>
+					<span className="text-xs text-muted-foreground">
+						{indeterminate ? "Processing…" : `${progress.toFixed(1)}%`}
+					</span>
 				)}
 			</div>
 		</TableCell>

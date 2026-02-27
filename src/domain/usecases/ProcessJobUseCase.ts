@@ -91,7 +91,6 @@ export class ProcessJobUseCase {
 		ProcessJobUseCase.spawnLock.add(lockKey);
 
 		const { commandExecutor } = this.deps;
-		let progressInterval: ReturnType<typeof setInterval> | undefined;
 		let cleanupOwnedByCallbacks = false;
 		let hasCleanedUp = false;
 		let terminalCallbackHandled = false;
@@ -107,10 +106,6 @@ export class ProcessJobUseCase {
 			hasCleanedUp = true;
 			ProcessRegistry.unregister(workflow, job.id);
 			ProcessJobUseCase.spawnLock.delete(lockKey);
-			if (progressInterval) {
-				clearInterval(progressInterval);
-				progressInterval = undefined;
-			}
 		};
 
 		try {
@@ -163,9 +158,9 @@ export class ProcessJobUseCase {
 
 			job.appendLog(`Starting: ${binary} ${args.join(" ")}`);
 
-			// Set up progress simulation for DolphinTool (doesn't output progress)
+			// Set up indeterminate progress for DolphinTool (doesn't output progress)
 			if (usesDolphin) {
-				progressInterval = this.startProgressSimulation(job, emitProgress);
+				job.indeterminate.value = true;
 			}
 
 			const callbacks: CommandCallbacks = {
@@ -438,8 +433,9 @@ export class ProcessJobUseCase {
 		const level = getCompressionLevel(preset);
 		const outputBaseName = this.getOutputBaseName(job.filename);
 
-		// User dir for temp files
+		// User dir for temp files — must exist before DolphinTool is invoked
 		const userDir = await fileSystem.joinPath(outputDir, ".retropacker_temp");
+		await fileSystem.createDirectory(userDir);
 		const baseArgs = (cmd: string) => [cmd, "-u", userDir];
 
 		let args: string[] = [];
@@ -643,32 +639,7 @@ export class ProcessJobUseCase {
 		return normalized.includes("no bundle id found");
 	}
 
-	/**
-	 * Start simulated progress for DolphinTool.
-	 */
-	private startProgressSimulation(
-		job: JobState,
-		emitProgress: (progress: number, etaSeconds?: number) => void,
-	): ReturnType<typeof setInterval> {
-		const mbSize = job.originalSize / (1024 * 1024);
-		const estSeconds = Math.max(10, mbSize / 4); // 4MB/s estimate
-		const incrementPerSec = 100 / estSeconds;
-		let simulatedProgress = Number(job.progress.peek()) || 0;
 
-		return setInterval(() => {
-			if (job.status.value !== "processing") {
-				return;
-			}
-
-			simulatedProgress = Math.min(99, simulatedProgress + incrementPerSec / 2);
-			if (simulatedProgress > (Number(job.progress.peek()) || 0)) {
-				emitProgress(
-					simulatedProgress,
-					Math.max(0, estSeconds - (simulatedProgress / 100) * estSeconds),
-				);
-			}
-		}, 500);
-	}
 
 	private createProgressEmitter(
 		job: JobState,

@@ -73,10 +73,15 @@ const config: Config = {
 						height: "0",
 					},
 				},
+				indeterminate: {
+					"0%": { transform: "translateX(-100%)" },
+					"100%": { transform: "translateX(300%)" },
+				},
 			},
 			animation: {
 				"accordion-down": "accordion-down 0.2s ease-out",
 				"accordion-up": "accordion-up 0.2s ease-out",
+				indeterminate: "indeterminate 1.5s ease-in-out infinite",
 			},
 		},
 	},
