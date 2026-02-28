@@ -56,4 +56,3 @@ export interface INotificationService {
 	 */
 	notifyFailure(title: string, body: string): Promise<void>;
 }
-

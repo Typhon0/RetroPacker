@@ -121,6 +121,16 @@ export interface IFileSystemRepository {
 	readTextFile(path: string): Promise<string>;
 
 	/**
+	 * Read UTF-8 text from a file, optionally capped to a byte budget.
+	 * Used for lightweight descriptor parsing (.cue/.gdi).
+	 *
+	 * @param path - Path to the file
+	 * @param maxBytes - Optional max bytes to read (defaults to implementation limit)
+	 * @returns File contents as string
+	 */
+	readText(path: string, maxBytes?: number): Promise<string>;
+
+	/**
 	 * Recursively remove a directory and all its contents.
 	 *
 	 * @param path - Directory path to remove

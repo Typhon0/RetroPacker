@@ -7,8 +7,18 @@
  * @module components/dashboard/JobTable/JobRow
  */
 
+import {
+	AlertCircle,
+	AlertTriangle,
+	CheckCircle,
+	FolderOpen,
+	Link2,
+	Play,
+	PlayCircle,
+	Trash2,
+	XCircle,
+} from "lucide-react";
 import React from "react";
-import { TableRow, TableCell } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -18,32 +28,39 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import {
-	XCircle,
-	PlayCircle,
-	CheckCircle,
-	AlertCircle,
-	Play,
-	Trash2,
-	FolderOpen,
-} from "lucide-react";
-import { cn, formatDuration } from "@/lib/utils";
+import { TableCell, TableRow } from "@/components/ui/table";
 import type { JobState } from "@/domain/entities/JobState";
 import type { Platform } from "@/domain/types/platform.types";
-import { CoverThumbnail } from "../CoverThumbnail";
 import { useSignalValue } from "@/hooks/useSignalValue";
+import { cn, formatDuration } from "@/lib/utils";
+import { CoverThumbnail } from "../CoverThumbnail";
 
 interface JobRowProps {
 	job: JobState;
 	depth: number;
 	isSelected: boolean;
 	folderOverride?: Platform;
+	isCueBinLinked: boolean;
+	linkedCompanionFilename?: string;
 	onSelect: (jobId: string) => void;
 	onStart: (jobId: string) => void;
 	onRemove: (jobId: string) => void;
 	onUpdatePlatform: (jobId: string, platform: Platform | undefined) => void;
 	onOpenLocation: (jobId: string) => void;
 }
+
+const PLATFORM_OVERRIDE_OPTIONS: ReadonlyArray<{
+	value: Platform;
+	label: string;
+}> = [
+	{ value: "ps1", label: "PS1" },
+	{ value: "ps2", label: "PS2" },
+	{ value: "psp", label: "PSP" },
+	{ value: "saturn", label: "Saturn" },
+	{ value: "dreamcast", label: "Dreamcast" },
+	{ value: "gamecube", label: "GameCube" },
+	{ value: "wii", label: "Wii" },
+];
 
 function getStatusIcon(status: string): React.ReactNode {
 	switch (status) {
@@ -84,6 +101,29 @@ function estimateSavedBytes(
 	compressionRatio: number,
 ): number {
 	return originalSize - originalSize * (compressionRatio / 100);
+}
+
+function formatPlatformLabel(platform: Platform): string {
+	switch (platform) {
+		case "ps1":
+			return "PS1";
+		case "ps2":
+			return "PS2";
+		case "psp":
+			return "PSP";
+		case "saturn":
+			return "Saturn";
+		case "dreamcast":
+			return "Dreamcast";
+		case "gamecube":
+			return "GameCube";
+		case "wii":
+			return "Wii";
+		case "segacd":
+			return "Sega CD";
+		default:
+			return "Auto";
+	}
 }
 
 const JobProgressCell = React.memo(({ job }: { job: JobState }) => {
@@ -176,6 +216,8 @@ const JobRowComponent = ({
 	depth,
 	isSelected,
 	folderOverride,
+	isCueBinLinked,
+	linkedCompanionFilename,
 	onSelect,
 	onStart,
 	onRemove,
@@ -189,28 +231,73 @@ const JobRowComponent = ({
 	const isDisabled = !!folderOverride;
 	const displayValue = platformOverride || system.toLowerCase();
 	const isProcessing = status === "processing";
+	const isUnknownBlocked = system === "Unknown" && !platformOverride;
+	const badgeLabel = platformOverride
+		? formatPlatformLabel(platformOverride)
+		: system;
+
+	const mainExt = job.filename.split(".").pop()?.toUpperCase() || "MAIN";
+	const linkExt =
+		linkedCompanionFilename?.split(".").pop()?.toUpperCase() || "LINK";
 
 	return (
 		<TableRow
 			className={cn(
 				"cursor-pointer hover:bg-muted/10 group",
 				isSelected && "bg-muted/50",
+				isUnknownBlocked && "border-l-2 border-l-amber-500 bg-amber-500/5",
 			)}
 			onClick={() => onSelect(job.id)}
 		>
 			<TableCell style={{ paddingLeft: `${depth * 16 + 8}px` }}>
 				<div className="flex items-center gap-2">
-					{getStatusIcon(status)}
+					{isUnknownBlocked ? (
+						<AlertTriangle className="h-4 w-4 text-amber-500" />
+					) : (
+						getStatusIcon(status)
+					)}
 					<CoverThumbnail system={system} size="sm" />
 				</div>
 			</TableCell>
-			<TableCell className="font-medium truncate max-w-[200px]">
-				{job.filename}
+			<TableCell className="font-medium max-w-[400px]">
+				{isCueBinLinked && linkedCompanionFilename ? (
+					<div className="flex w-full items-center gap-2">
+						<div
+							className="flex flex-1 min-w-0 items-center justify-between gap-2 rounded-md border border-border/50 bg-muted/40 px-2.5 py-1.5 shadow-sm font-medium"
+							title={job.filename}
+						>
+							<span className="truncate text-sm leading-none">
+								{job.filename}
+							</span>
+							<span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-blue-500/10 text-blue-500">
+								{mainExt}
+							</span>
+						</div>
+						<Link2 className="h-4 w-4 shrink-0 text-muted-foreground/60" />
+						<div
+							className="flex flex-1 min-w-0 items-center justify-between gap-2 rounded-md border border-border/50 bg-muted/40 px-2.5 py-1.5 shadow-sm font-medium"
+							title={linkedCompanionFilename}
+						>
+							<span className="truncate text-sm leading-none">
+								{linkedCompanionFilename}
+							</span>
+							<span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-purple-500/10 text-purple-500">
+								{linkExt}
+							</span>
+						</div>
+					</div>
+				) : (
+					<div className="flex min-w-0 flex-col gap-0.5">
+						<div className="flex min-w-0 items-center gap-2">
+							<span className="truncate">{job.filename}</span>
+						</div>
+					</div>
+				)}
 			</TableCell>
 			<TableCell>
-				{status === "pending" ? (
+				{status === "pending" || isUnknownBlocked ? (
 					<Select
-						value={displayValue}
+						value={isUnknownBlocked ? undefined : displayValue}
 						onValueChange={(val) => {
 							onUpdatePlatform(job.id, val as Platform);
 						}}
@@ -218,12 +305,21 @@ const JobRowComponent = ({
 					>
 						<SelectTrigger
 							className={cn(
-								"h-7 w-[100px] text-xs",
+								"h-7 text-xs",
+								isUnknownBlocked ? "w-[250px]" : "w-[140px]",
 								isDisabled && "opacity-50",
+								isUnknownBlocked && "border-amber-500/50 text-amber-500",
 							)}
 							onClick={(e) => e.stopPropagation()}
 						>
-							<SelectValue />
+							{isUnknownBlocked ? (
+								<span className="flex items-center gap-1">
+									<AlertTriangle className="h-3 w-3" />
+									Platform Unknown. Please select:
+								</span>
+							) : (
+								<SelectValue />
+							)}
 						</SelectTrigger>
 						<SelectContent>
 							{![
@@ -234,21 +330,20 @@ const JobRowComponent = ({
 								"saturn",
 								"gamecube",
 								"wii",
-							].includes(system.toLowerCase()) && (
-								<SelectItem value={system.toLowerCase()}>{system}</SelectItem>
-							)}
-							<SelectItem value="ps1">PS1</SelectItem>
-							<SelectItem value="ps2">PS2</SelectItem>
-							<SelectItem value="psp">PSP</SelectItem>
-							<SelectItem value="dreamcast">Dreamcast</SelectItem>
-							<SelectItem value="saturn">Saturn</SelectItem>
-							<SelectItem value="gamecube">GameCube</SelectItem>
-							<SelectItem value="wii">Wii</SelectItem>
+							].includes(system.toLowerCase()) &&
+								system !== "Unknown" && (
+									<SelectItem value={system.toLowerCase()}>{system}</SelectItem>
+								)}
+							{PLATFORM_OVERRIDE_OPTIONS.map((option) => (
+								<SelectItem key={option.value} value={option.value}>
+									{option.label}
+								</SelectItem>
+							))}
 						</SelectContent>
 					</Select>
 				) : (
 					<span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold border-transparent bg-secondary text-secondary-foreground">
-						{system}
+						{badgeLabel}
 					</span>
 				)}
 			</TableCell>

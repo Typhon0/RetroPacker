@@ -1,10 +1,10 @@
-import {
-	CompressionPreset,
+import type { Platform } from "../types/platform.types";
+import type {
 	ChdSettings,
+	CompressionPreset,
 	DolphinSettings,
 } from "../types/settings.types";
-import { Platform } from "../types/platform.types";
-import { WorkflowType } from "../types/workflow.types";
+import type { WorkflowType } from "../types/workflow.types";
 
 /**
  * Application settings state.
@@ -146,4 +146,3 @@ export interface ISettingsRepository {
 	 */
 	subscribe(callback: (settings: AppSettings) => void): () => void;
 }
-

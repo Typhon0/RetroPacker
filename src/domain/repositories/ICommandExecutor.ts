@@ -11,6 +11,10 @@ export interface CommandResult {
 	readonly code: number | null;
 	/** Signal that terminated the process (if any). */
 	readonly signal: number | null;
+	/** Captured stdout output (if available). */
+	readonly stdout?: string;
+	/** Captured stderr output (if available). */
+	readonly stderr?: string;
 }
 
 /**
@@ -79,4 +83,3 @@ export interface ICommandExecutor {
 	 */
 	forceKillProcess(pid: number): Promise<void>;
 }
-

@@ -1,13 +1,13 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { WorkflowType } from "@/domain/types/workflow.types";
-import type {
-	CompressionPreset,
-	MediaType,
-	ChdSettings,
-	DolphinSettings,
-} from "@/domain/types/settings.types";
 import type { Platform } from "@/domain/types/platform.types";
+import type {
+	ChdSettings,
+	CompressionPreset,
+	DolphinSettings,
+	MediaType,
+} from "@/domain/types/settings.types";
+import type { WorkflowType } from "@/domain/types/workflow.types";
 
 // Re-export domain types for backward compatibility
 export type {

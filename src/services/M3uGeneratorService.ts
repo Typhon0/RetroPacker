@@ -18,7 +18,7 @@ import type { IFileSystemRepository } from "@/domain/repositories/IFileSystemRep
  *   Group 3 — Remainder after disc indicator (e.g. region tag)
  */
 const DISC_REGEX =
-	/(.*?)\s*[\(\[](?:Disc|Disk|Pt|Part)\s*(\d+)[A-Za-z]?[\)\]](.*)/i;
+	/(.*?)\s*[([](?:Disc|Disk|Pt|Part)\s*(\d+)[A-Za-z]?[)\]](.*)/i;
 
 export interface DiscEntry {
 	readonly filename: string;

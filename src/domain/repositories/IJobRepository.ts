@@ -1,5 +1,5 @@
-import { JobProps, JobUpdate } from "../entities/Job";
-import { WorkflowType } from "../types/workflow.types";
+import type { JobProps, JobUpdate } from "../entities/Job";
+import type { WorkflowType } from "../types/workflow.types";
 
 export interface IJobRepository {
 	/**
@@ -75,5 +75,4 @@ export interface IJobRepository {
 	 * @param processing - Whether processing is active
 	 */
 	setProcessing(workflow: WorkflowType, processing: boolean): void;
-
 }

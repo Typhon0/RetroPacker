@@ -5,13 +5,13 @@
  * @module data/repositories/TauriCommandExecutor
  */
 
-import { Command } from "@tauri-apps/plugin-shell";
 import { platform } from "@tauri-apps/plugin-os";
-import {
-	ICommandExecutor,
+import { Command } from "@tauri-apps/plugin-shell";
+import type {
 	BinaryName,
 	CommandCallbacks,
 	CommandResult,
+	ICommandExecutor,
 	SpawnedProcess,
 } from "../../domain/repositories/ICommandExecutor";
 
@@ -83,6 +83,8 @@ export class TauriCommandExecutor implements ICommandExecutor {
 		return {
 			code: output.code,
 			signal: output.signal,
+			stdout: output.stdout,
+			stderr: output.stderr,
 		};
 	}
 
@@ -113,12 +115,11 @@ export class TauriCommandExecutor implements ICommandExecutor {
 				const cmd = Command.create("kill", ["-9", pid.toString()]);
 				await cmd
 					.execute()
-					.then(() => { })
-					.catch(() => { });
+					.then(() => {})
+					.catch(() => {});
 			}
 		} catch {
 			// Ignore force-kill failures
 		}
 	}
 }
-

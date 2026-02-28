@@ -1,11 +1,16 @@
-import React, { useCallback, useState } from "react";
-import { Upload, FolderPlus, Loader2 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import type { WorkflowType } from "@/domain/types/workflow.types";
-import { Button } from "@/components/ui/button";
 import { open } from "@tauri-apps/plugin-dialog";
 import { stat } from "@tauri-apps/plugin-fs";
-import { useQueueManager } from "@/presentation/hooks/useQueueManager";
+import { FolderPlus, Loader2, Upload } from "lucide-react";
+import type React from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import type { WorkflowType } from "@/domain/types/workflow.types";
+import { cn } from "@/lib/utils";
+import {
+	type QueueAddProgress,
+	useQueueManager,
+} from "@/presentation/hooks/useQueueManager";
 
 interface DropZoneProps {
 	workflow: WorkflowType;
@@ -14,6 +19,14 @@ interface DropZoneProps {
 export function DropZone({ workflow }: DropZoneProps) {
 	const [isDragging, setIsDragging] = useState(false);
 	const [isAnalyzing, setIsAnalyzing] = useState(false);
+	const [dropError, setDropError] = useState<string | undefined>(undefined);
+	const [analysisProgress, setAnalysisProgress] = useState<
+		QueueAddProgress | undefined
+	>(undefined);
+	const [analysisStartAt, setAnalysisStartAt] = useState<number | undefined>(
+		undefined,
+	);
+	const [analysisElapsedMs, setAnalysisElapsedMs] = useState(0);
 
 	// Use the new Clean Architecture hook
 	const { addFile, addFolders, fileConfig } = useQueueManager(workflow);
@@ -30,8 +43,16 @@ export function DropZone({ workflow }: DropZoneProps) {
 
 	const processFiles = useCallback(
 		async (files: File[]) => {
-			for (const file of files) {
-				// @ts-ignore - Tauri provides path on File objects
+			let unsupportedMessage: string | undefined;
+			setAnalysisProgress({
+				phase: "analyzing",
+				discoveredFiles: files.length,
+				analyzedFiles: 0,
+				totalFiles: files.length,
+			});
+
+			for (const [index, file] of files.entries()) {
+				// @ts-expect-error - Tauri provides path on File objects
 				let filePath = file.path;
 
 				if (!filePath) {
@@ -46,15 +67,39 @@ export function DropZone({ workflow }: DropZoneProps) {
 					}
 				}
 
-				await addFile(filePath, file.name, file.size);
+				const result = await addFile(filePath, file.name, file.size);
+				setAnalysisProgress({
+					phase: "analyzing",
+					discoveredFiles: files.length,
+					analyzedFiles: index + 1,
+					totalFiles: files.length,
+					currentPath: filePath,
+				});
+				if (
+					!result.added &&
+					result.message !== undefined &&
+					unsupportedMessage === undefined
+				) {
+					unsupportedMessage = result.message;
+				}
 			}
+
+			setDropError(unsupportedMessage);
 		},
 		[addFile],
 	);
 
 	const processPaths = useCallback(
 		async (paths: string[]) => {
-			for (const filePath of paths) {
+			let unsupportedMessage: string | undefined;
+			setAnalysisProgress({
+				phase: "analyzing",
+				discoveredFiles: paths.length,
+				analyzedFiles: 0,
+				totalFiles: paths.length,
+			});
+
+			for (const [index, filePath] of paths.entries()) {
 				const name = filePath.split(/[\\/]/).pop() || "unknown";
 				let size = 0;
 				try {
@@ -63,30 +108,60 @@ export function DropZone({ workflow }: DropZoneProps) {
 				} catch (e) {
 					console.warn(`Failed to stat file ${filePath}, assuming size 0`, e);
 				}
-				await addFile(filePath, name, size);
+				const result = await addFile(filePath, name, size);
+				setAnalysisProgress({
+					phase: "analyzing",
+					discoveredFiles: paths.length,
+					analyzedFiles: index + 1,
+					totalFiles: paths.length,
+					currentPath: filePath,
+				});
+				if (
+					!result.added &&
+					result.message !== undefined &&
+					unsupportedMessage === undefined
+				) {
+					unsupportedMessage = result.message;
+				}
 			}
+
+			setDropError(unsupportedMessage);
 		},
 		[addFile],
 	);
+
+	const beginAnalysis = useCallback(() => {
+		setIsAnalyzing(true);
+		setAnalysisProgress(undefined);
+		const now = Date.now();
+		setAnalysisStartAt(now);
+		setAnalysisElapsedMs(0);
+	}, []);
+
+	const endAnalysis = useCallback(() => {
+		setIsAnalyzing(false);
+	}, []);
 
 	const handleDrop = useCallback(
 		async (e: React.DragEvent) => {
 			e.preventDefault();
 			setIsDragging(false);
-			setIsAnalyzing(true);
+			beginAnalysis();
+			setDropError(undefined);
 
 			try {
 				const files = Array.from(e.dataTransfer.files);
 				await processFiles(files);
 			} finally {
-				setIsAnalyzing(false);
+				endAnalysis();
 			}
 		},
-		[processFiles],
+		[beginAnalysis, endAnalysis, processFiles],
 	);
 
 	const handleClick = useCallback(async () => {
 		try {
+			setDropError(undefined);
 			const selected = await open({
 				multiple: true,
 				filters: [
@@ -98,44 +173,97 @@ export function DropZone({ workflow }: DropZoneProps) {
 			});
 
 			if (selected) {
-				setIsAnalyzing(true);
+				beginAnalysis();
 				try {
 					const paths = Array.isArray(selected) ? selected : [selected];
 					await processPaths(paths);
 				} finally {
-					setIsAnalyzing(false);
+					endAnalysis();
 				}
 			}
 		} catch (err) {
 			console.error("Failed to open file dialog", err);
-			setIsAnalyzing(false);
+			endAnalysis();
 		}
-	}, [fileConfig, processPaths]);
+	}, [beginAnalysis, endAnalysis, fileConfig, processPaths]);
 
 	const handleAddFolder = useCallback(
 		async (e: React.MouseEvent) => {
 			e.stopPropagation();
 			try {
+				setDropError(undefined);
 				const selected = await open({
 					directory: true,
 					multiple: true,
 				});
 
 				if (selected) {
-					setIsAnalyzing(true);
+					beginAnalysis();
 					try {
 						const paths = Array.isArray(selected) ? selected : [selected];
 						// Use the Clean Architecture hook for folder processing
-						await addFolders(paths);
+						const results = await addFolders(paths, (progress) => {
+							setAnalysisProgress(progress);
+						});
+						const unsupported = results.find(
+							(result) => !result.added && result.message !== undefined,
+						);
+						if (unsupported) {
+							setDropError(unsupported.message);
+						}
 					} finally {
-						setIsAnalyzing(false);
+						endAnalysis();
 					}
 				}
 			} catch (err) {
 				console.error("Failed to open directory dialog", err);
 			}
 		},
-		[addFolders],
+		[addFolders, beginAnalysis, endAnalysis],
+	);
+
+	useEffect(() => {
+		if (!isAnalyzing || analysisStartAt === undefined) {
+			return;
+		}
+
+		const timer = setInterval(() => {
+			setAnalysisElapsedMs(Date.now() - analysisStartAt);
+		}, 300);
+
+		return () => clearInterval(timer);
+	}, [analysisStartAt, isAnalyzing]);
+
+	const elapsedLabel = useMemo(() => {
+		const seconds = Math.max(0, Math.floor(analysisElapsedMs / 1000));
+		const minutes = Math.floor(seconds / 60);
+		const remainingSeconds = seconds % 60;
+		return `${minutes.toString().padStart(2, "0")}:${remainingSeconds
+			.toString()
+			.padStart(2, "0")}`;
+	}, [analysisElapsedMs]);
+
+	const currentPathLabel = useMemo(() => {
+		const currentPath = analysisProgress?.currentPath;
+		if (!currentPath) return undefined;
+		return currentPath.split(/[\\/]/).pop() || currentPath;
+	}, [analysisProgress?.currentPath]);
+
+	const isScanPhase = analysisProgress?.phase === "scanning";
+	const totalFiles =
+		analysisProgress?.totalFiles ?? analysisProgress?.discoveredFiles;
+	const analyzedFiles = analysisProgress?.analyzedFiles ?? 0;
+	const progressPercent =
+		totalFiles && totalFiles > 0 ? (analyzedFiles / totalFiles) * 100 : 0;
+
+	const handleKeyDown = useCallback(
+		(e: React.KeyboardEvent<HTMLDivElement>) => {
+			if (e.key === "Enter" || e.key === " ") {
+				e.preventDefault();
+				void handleClick();
+			}
+		},
+		[handleClick],
 	);
 
 	return (
@@ -144,6 +272,9 @@ export function DropZone({ workflow }: DropZoneProps) {
 			onDragLeave={handleDragLeave}
 			onDrop={handleDrop}
 			onClick={!isAnalyzing ? handleClick : undefined}
+			onKeyDown={!isAnalyzing ? handleKeyDown : undefined}
+			role="button"
+			tabIndex={isAnalyzing ? -1 : 0}
 			className={cn(
 				"border-2 border-dashed rounded-xl p-6 transition-all duration-300 flex flex-col items-center justify-center text-center cursor-pointer relative group min-h-[200px]",
 				isDragging
@@ -153,11 +284,24 @@ export function DropZone({ workflow }: DropZoneProps) {
 			)}
 		>
 			{isAnalyzing ? (
-				<div className="flex flex-col items-center animate-pulse">
-					<Loader2 className="h-10 w-10 mb-3 text-primary animate-spin" />
-					<h3 className="text-lg font-semibold">Analyzing Files...</h3>
+				<div className="flex w-full max-w-xl flex-col items-center gap-2">
+					<Loader2 className="h-10 w-10 mb-1 text-primary animate-spin" />
+					<h3 className="text-lg font-semibold">
+						{isScanPhase ? "Scanning folders..." : "Analyzing files..."}
+					</h3>
 					<p className="text-sm text-muted-foreground">
-						Fetching metadata and covers
+						{isScanPhase
+							? `${analysisProgress?.scannedDirectories ?? 0} folders scanned, ${analysisProgress?.discoveredFiles ?? 0} files found`
+							: `${analyzedFiles}${totalFiles ? ` / ${totalFiles}` : ""} files analyzed`}
+					</p>
+					<Progress
+						className="h-2 w-full max-w-md"
+						value={progressPercent}
+						indeterminate={isScanPhase || !totalFiles}
+					/>
+					<p className="text-xs text-muted-foreground">
+						Elapsed: {elapsedLabel}
+						{currentPathLabel ? `  •  ${currentPathLabel}` : ""}
 					</p>
 				</div>
 			) : (
@@ -189,6 +333,11 @@ export function DropZone({ workflow }: DropZoneProps) {
 							Add Folder
 						</Button>
 					</div>
+					{dropError && (
+						<p className="mt-3 text-sm font-medium text-amber-600">
+							{dropError}
+						</p>
+					)}
 				</>
 			)}
 		</div>

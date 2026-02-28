@@ -1,7 +1,7 @@
-import { useEffect, useRef } from "react";
 import { getCurrentWindow, ProgressBarStatus } from "@tauri-apps/api/window";
-import { jobStore } from "@/stores/JobStore";
+import { useEffect, useRef } from "react";
 import { useSignalValue } from "@/hooks/useSignalValue";
+import { jobStore } from "@/stores/JobStore";
 
 /**
  * Hook to update Windows/macOS taskbar progress based on queue status.
@@ -47,7 +47,10 @@ export function useTaskbarProgress() {
 				nextPayload = {
 					status: ProgressBarStatus.None,
 				};
-			} else if (globalSummary.processing === 0 && globalSummary.completed === 0) {
+			} else if (
+				globalSummary.processing === 0 &&
+				globalSummary.completed === 0
+			) {
 				nextPayload = {
 					status: ProgressBarStatus.None,
 				};
@@ -85,4 +88,3 @@ export function useTaskbarProgress() {
 		};
 	}, [globalSummary, anyProcessing]);
 }
-

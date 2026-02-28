@@ -1,5 +1,7 @@
-import type { SpawnedProcess } from "@/domain/repositories/ICommandExecutor";
-import type { ICommandExecutor } from "@/domain/repositories/ICommandExecutor";
+import type {
+	ICommandExecutor,
+	SpawnedProcess,
+} from "@/domain/repositories/ICommandExecutor";
 import type { WorkflowType } from "@/domain/types/workflow.types";
 
 /**
@@ -41,13 +43,13 @@ export function register(
 
 	// Race condition fix: Check if job was cancelled while spawning
 	if (cancelledJobs.has(key)) {
-		terminateProcess(process).catch(() => { });
+		terminateProcess(process).catch(() => {});
 		return;
 	}
 
 	// Race condition fix: Check if entire workflow was cancelled
 	if (cancelledWorkflows.has(workflow)) {
-		terminateProcess(process).catch(() => { });
+		terminateProcess(process).catch(() => {});
 		return;
 	}
 

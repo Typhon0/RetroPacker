@@ -1,8 +1,9 @@
-import { open, SeekMode } from "@tauri-apps/plugin-fs";
-import { DetectSystemUseCase } from "@/domain/usecases/DetectSystemUseCase";
+import { dirname, join } from "@tauri-apps/api/path";
+import { exists, open, readTextFile, SeekMode } from "@tauri-apps/plugin-fs";
 import type { DetectedSystem } from "@/domain/types/platform.types";
-import { GameIdExtractor } from "./GameIdExtractor";
+import { DetectSystemUseCase } from "@/domain/usecases/DetectSystemUseCase";
 import { CoverArtService } from "./CoverArtService";
+import { GameIdExtractor } from "./GameIdExtractor";
 
 type ReadableHandle = {
 	read: (buffer: Uint8Array) => Promise<number | null>;
@@ -37,22 +38,37 @@ export class MetadataService {
 					await file.close();
 				}
 			},
+			readTextFile: async (path: string): Promise<string> => {
+				return readTextFile(path);
+			},
+			readText: async (path: string, maxBytes?: number): Promise<string> => {
+				const content = await readTextFile(path);
+				if (maxBytes === undefined || maxBytes <= 0) {
+					return content;
+				}
+				return content.slice(0, maxBytes);
+			},
+			exists: async (path: string): Promise<boolean> => {
+				return exists(path);
+			},
+			dirname: async (path: string): Promise<string> => {
+				return dirname(path);
+			},
+			joinPath: async (...segments: string[]): Promise<string> => {
+				if (segments.length === 0) return "";
+				if (segments.length === 1) return segments[0];
+				let result = segments[0];
+				for (let i = 1; i < segments.length; i++) {
+					result = await join(result, segments[i]);
+				}
+				return result;
+			},
 		},
+		// No commandExecutor — MetadataService runs without CLI tools
 	});
 
 	static async detectSystemAsync(filePath: string): Promise<DetectedSystem> {
-		const detected =
-			await MetadataService.detectSystemUseCase.execute(filePath);
-
-		// CHD is a container format; use path hints to recover likely platform labels.
-		if (detected === "CHD") {
-			const inferred = MetadataService.detectSystemUseCase.detectSync(filePath);
-			if (inferred !== "Unknown") {
-				return inferred;
-			}
-		}
-
-		return detected;
+		return MetadataService.detectSystemUseCase.execute(filePath);
 	}
 
 	/** @deprecated Use GameIdExtractor.extractGameId directly */

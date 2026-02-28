@@ -1,13 +1,14 @@
 import { useEffect, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { usePackerStore } from "../stores/usePackerStore";
-import { useRepositories } from "../presentation/context/RepositoryContext";
-import { ProcessJobUseCase } from "../domain/usecases/ProcessJobUseCase";
-import { jobStore } from "@/stores/JobStore";
-import { useSignalValue } from "@/hooks/useSignalValue";
-import { usePrevious } from "./usePrevious";
 import type { JobState } from "@/domain/entities/JobState";
 import type { WorkflowType } from "@/domain/types/workflow.types";
+import { useSignalValue } from "@/hooks/useSignalValue";
+import { buildCueBinLinkMap } from "@/lib/cueBinLinking";
+import { jobStore } from "@/stores/JobStore";
+import { ProcessJobUseCase } from "../domain/usecases/ProcessJobUseCase";
+import { useRepositories } from "../presentation/context/RepositoryContext";
+import { usePackerStore } from "../stores/usePackerStore";
+import { usePrevious } from "./usePrevious";
 
 export interface QueueDispatchPlan {
 	processingCount: number;
@@ -26,13 +27,13 @@ export function planQueueDispatch(params: {
 }): QueueDispatchPlan {
 	const { queue, startRequests, isProcessing, concurrency } = params;
 	let processingCount = 0;
-	let pendingCount = 0;
+	let dispatchablePendingCount = 0;
 
 	for (const job of queue) {
 		if (job.status.value === "processing") {
 			processingCount += 1;
-		} else if (job.status.value === "pending") {
-			pendingCount += 1;
+		} else if (job.status.value === "pending" && job.isReadyToProcess.value) {
+			dispatchablePendingCount += 1;
 		}
 	}
 
@@ -41,7 +42,10 @@ export function planQueueDispatch(params: {
 
 	for (const requestedId of startRequests) {
 		const candidate = queue.find((job) => job.id === requestedId);
-		if (candidate?.status.value === "pending") {
+		if (
+			candidate?.status.value === "pending" &&
+			candidate.isReadyToProcess.value
+		) {
 			nextRequestedJob = candidate;
 			break;
 		}
@@ -49,14 +53,16 @@ export function planQueueDispatch(params: {
 	}
 
 	const nextQueuedJob = isProcessing
-		? queue.find((job) => job.status.value === "pending")
+		? queue.find(
+				(job) => job.status.value === "pending" && job.isReadyToProcess.value,
+			)
 		: undefined;
 	const nextJob = nextRequestedJob ?? nextQueuedJob;
 	const hasOnlyStaleRequests = staleRequestIds.length === startRequests.length;
 	const shouldAutoPause =
 		isProcessing &&
 		processingCount === 0 &&
-		pendingCount === 0 &&
+		dispatchablePendingCount === 0 &&
 		hasOnlyStaleRequests;
 
 	return {
@@ -70,6 +76,19 @@ export function planQueueDispatch(params: {
 			!!nextJob,
 		shouldAutoPause,
 	};
+}
+
+function getVisibleQueue(queue: readonly JobState[]): JobState[] {
+	const hiddenIds = buildCueBinLinkMap(
+		queue.map((job) => ({
+			id: job.id,
+			path: job.path,
+			filename: job.filename,
+			system: job.system.value,
+			platformOverride: job.platformOverride.value,
+		})),
+	).hiddenCompanionJobIds;
+	return queue.filter((job) => !hiddenIds.has(job.id));
 }
 
 /**
@@ -111,6 +130,7 @@ export function useQueueProcessor(workflow: WorkflowType) {
 	);
 
 	const prevIsProcessing = usePrevious(isProcessing);
+	const dispatchRevision = `${queueStats.queueLength}:${queueStats.pendingCount}:${queueStats.processingCount}:${startRequests.join(",")}`;
 
 	// Batch completion notification + M3U generation
 	useEffect(() => {
@@ -138,9 +158,10 @@ export function useQueueProcessor(workflow: WorkflowType) {
 				void (async () => {
 					try {
 						const queue = jobStore.getQueue(workflow);
+						const visibleQueue = getVisibleQueue(queue);
 						const completedPaths: string[] = [];
 
-						for (const job of queue) {
+						for (const job of visibleQueue) {
 							if (job.status.value !== "completed") continue;
 							const baseName = job.filename.replace(/\.[^.]+$/, "");
 							const outputDir = settings.outputDirectory
@@ -154,14 +175,16 @@ export function useQueueProcessor(workflow: WorkflowType) {
 						}
 
 						if (completedPaths.length > 0) {
+							const firstVisibleJob = visibleQueue[0];
+							if (!firstVisibleJob) {
+								return;
+							}
 							const { M3uGeneratorService } = await import(
 								"@/services/M3uGeneratorService"
 							);
 							const outputDir = settings.outputDirectory
 								? settings.outputDirectory
-								: await repositories.fileSystem.dirname(
-										jobStore.getQueue(workflow)[0].path,
-									);
+								: await repositories.fileSystem.dirname(firstVisibleJob.path);
 							const generated = await M3uGeneratorService.generateM3uFiles(
 								outputDir,
 								completedPaths,
@@ -194,8 +217,9 @@ export function useQueueProcessor(workflow: WorkflowType) {
 	]);
 
 	useEffect(() => {
+		void dispatchRevision;
 		const processQueue = async () => {
-			const queue = jobStore.getQueue(workflow);
+			const queue = getVisibleQueue(jobStore.getQueue(workflow));
 			const latestStartRequests = jobStore.startRequests[workflow].value;
 			const plan = planQueueDispatch({
 				queue,
@@ -245,10 +269,7 @@ export function useQueueProcessor(workflow: WorkflowType) {
 
 		void processQueue();
 	}, [
-		queueStats.queueLength,
-		queueStats.pendingCount,
-		queueStats.processingCount,
-		startRequests,
+		dispatchRevision,
 		concurrency,
 		isProcessing,
 		workflow,

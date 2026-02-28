@@ -1,20 +1,20 @@
-import { JobState } from "../entities/JobState";
-import { WorkflowType } from "../types/workflow.types";
-import {
-	CompressionPreset,
-	ChdSettings,
-	DolphinSettings,
-	getCompressionLevel,
-} from "../types/settings.types";
+import { CueProcessorService } from "@/services/CueProcessorService";
+import { ProcessRegistry } from "@/services/ProcessRegistry";
+import type { JobState } from "../entities/JobState";
+import type {
+	CommandCallbacks,
+	ICommandExecutor,
+} from "../repositories/ICommandExecutor";
+import type { IFileSystemRepository } from "../repositories/IFileSystemRepository";
+import type { INotificationService } from "../repositories/INotificationService";
 import { isNintendoSystem } from "../types/platform.types";
 import {
-	ICommandExecutor,
-	CommandCallbacks,
-} from "../repositories/ICommandExecutor";
-import { INotificationService } from "../repositories/INotificationService";
-import { IFileSystemRepository } from "../repositories/IFileSystemRepository";
-import { ProcessRegistry } from "@/services/ProcessRegistry";
-import { CueProcessorService } from "@/services/CueProcessorService";
+	type ChdSettings,
+	type CompressionPreset,
+	type DolphinSettings,
+	getCompressionLevel,
+} from "../types/settings.types";
+import type { WorkflowType } from "../types/workflow.types";
 
 /**
  * Dependencies for ProcessJobUseCase.
@@ -83,6 +83,27 @@ export class ProcessJobUseCase {
 			return;
 		}
 
+		const canProcessUnknownPlatform = this.canProcessUnknownPlatform(
+			workflow,
+			ext,
+		);
+
+		// Safety gate: unknown platform requires either manual override or a
+		// format where routing is inherently safe.
+		if (
+			job.system.value === "Unknown" &&
+			!job.platformOverride.value &&
+			!canProcessUnknownPlatform
+		) {
+			job.setErrorMessage(
+				"Platform unknown. Please select a platform before processing.",
+			);
+			job.appendLog(
+				"Skipped: platform is unknown and no manual platform override was set.",
+			);
+			return;
+		}
+
 		// Prevent double-spawning: check if this job is already being started
 		if (ProcessJobUseCase.spawnLock.has(lockKey)) {
 			console.warn(
@@ -96,11 +117,22 @@ export class ProcessJobUseCase {
 		let cleanupOwnedByCallbacks = false;
 		let hasCleanedUp = false;
 		let terminalCallbackHandled = false;
+		let tempDirCleaned = false;
 
 		const beginTerminalCallback = (): boolean => {
 			if (terminalCallbackHandled) return false;
 			terminalCallbackHandled = true;
 			return true;
+		};
+
+		const cleanupTempDir = async (): Promise<void> => {
+			if (tempDirCleaned) return;
+			tempDirCleaned = true;
+			try {
+				await this.deps.fileSystem.removeDirectory(tempDir);
+			} catch {
+				// Temp dir may not exist or may already be cleaned.
+			}
 		};
 
 		const cleanup = (): void => {
@@ -142,23 +174,24 @@ export class ProcessJobUseCase {
 			// Smart CUE preprocessing (chdman compress only)
 			let overrideInputPath: string | undefined;
 			if (!usesDolphin && workflow === "compress") {
-				try {
-					const preprocessed = await CueProcessorService.prepareInput(
-						job.path,
-						outputDir,
-						this.deps.fileSystem,
-					);
-					if (preprocessed) {
-						overrideInputPath = preprocessed;
-						job.appendLog(`Preprocessed CUE: ${preprocessed}`);
-					}
-				} catch (cueErr) {
-					const msg = cueErr instanceof Error ? cueErr.message : String(cueErr);
+				const cueResult = await CueProcessorService.prepareInput(
+					job.path,
+					tempDir,
+					this.deps.fileSystem,
+				);
+				if (!cueResult.success) {
+					const msg =
+						cueResult.errorMessage ?? "Failed to preprocess CUE/BIN input.";
 					job.setStatus("failed");
-					job.setErrorMessage("Failed to preprocess CUE file.");
+					job.setErrorMessage(msg);
 					job.appendLog(`CUE preprocessing failed: ${msg}`);
 					job.endTime.value = Date.now();
 					return;
+				}
+
+				if (cueResult.modifiedPath) {
+					overrideInputPath = cueResult.modifiedPath;
+					job.appendLog(`Preprocessed CUE: ${cueResult.modifiedPath}`);
 				}
 			}
 
@@ -280,6 +313,7 @@ export class ProcessJobUseCase {
 								error,
 							);
 						} finally {
+							await cleanupTempDir();
 							cleanup();
 						}
 					})();
@@ -314,6 +348,7 @@ export class ProcessJobUseCase {
 								handlerError,
 							);
 						} finally {
+							await cleanupTempDir();
 							cleanup();
 						}
 					})();
@@ -341,15 +376,34 @@ export class ProcessJobUseCase {
 			job.appendLog(`Exception: ${errorMessage}`);
 		} finally {
 			if (!cleanupOwnedByCallbacks) {
+				await cleanupTempDir();
 				cleanup();
 			}
-			// Clean up temp directory
-			try {
-				await this.deps.fileSystem.removeDirectory(tempDir);
-			} catch {
-				// Temp dir may not exist or may already be cleaned
-			}
 		}
+	}
+
+	private canProcessUnknownPlatform(
+		workflow: WorkflowType,
+		ext: string,
+	): boolean {
+		// Extract/verify/info already have strict format validation and don't need
+		// system detection to choose safe command routing.
+		if (workflow !== "compress") {
+			return true;
+		}
+
+		// CD descriptor inputs are safely routed through createcd and CUE/BIN
+		// preprocessing.
+		if (["cue", "bin", "gdi", "toc", "ccd"].includes(ext)) {
+			return true;
+		}
+
+		// Native Nintendo formats are safely routed to DolphinTool by extension.
+		if (["rvz", "gcz", "wbfs", "wia", "gcm"].includes(ext)) {
+			return true;
+		}
+
+		return false;
 	}
 
 	/**
@@ -414,17 +468,24 @@ export class ProcessJobUseCase {
 		const { fileSystem } = this.deps;
 		const { preset, customCompression, chd } = settings;
 		const outputBaseName = this.getOutputBaseName(job.filename);
-		const sourceExt = job.path.split(".").pop()?.toLowerCase() ?? "";
 		const inputPath = overrideInputPath ?? job.path;
 
 		let args: string[] = [];
+		const effectiveSystem =
+			job.platformOverride.value?.toLowerCase() ??
+			job.system.value.toLowerCase();
+
+		// Determine strict CD vs DVD strategy based on effective system
+		const isDvdSystem = effectiveSystem === "ps2" || effectiveSystem === "psp";
+		const compressCmd = isDvdSystem ? "createdvd" : "createcd";
+		const extractCmd = isDvdSystem ? "extractdvd" : "extractcd";
 
 		if (workflow === "compress") {
 			const outputPath = await fileSystem.joinPath(
 				outputDir,
 				`${outputBaseName}.chd`,
 			);
-			args = [job.strategy, "-i", inputPath, "-o", outputPath];
+			args = [compressCmd, "-i", inputPath, "-o", outputPath];
 
 			// Compression args
 			const compressionArgs = this.getChdCompressionArgs(
@@ -436,21 +497,18 @@ export class ProcessJobUseCase {
 			// Hunk size
 			if (chd.hunkSize) {
 				args.push("-hs", chd.hunkSize.toString());
-			} else if (job.system.value === "PS2" || sourceExt === "iso") {
-				args.push("-hs", "2048");
+			} else if (isDvdSystem) {
+				args.push("-hs", "2048"); // Strict 2048 for DVD systems
 			}
 
 			args.push("-f"); // Force overwrite
 		} else if (workflow === "extract") {
-			const extractStrategy =
-				job.strategy === "createdvd" ? "extractdvd" : "extractcd";
-
-			if (extractStrategy === "extractdvd") {
+			if (extractCmd === "extractdvd") {
 				const outputPath = await fileSystem.joinPath(
 					outputDir,
 					`${outputBaseName}.iso`,
 				);
-				args = [extractStrategy, "-i", job.path, "-o", outputPath, "-f"];
+				args = [extractCmd, "-i", job.path, "-o", outputPath, "-f"];
 			} else {
 				const outputCue = await fileSystem.joinPath(
 					outputDir,

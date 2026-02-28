@@ -5,22 +5,22 @@
  * @module data/repositories/TauriFileSystemRepository
  */
 
+import { invoke } from "@tauri-apps/api/core";
+import { join, dirname as pathDirname } from "@tauri-apps/api/path";
 import {
-	stat,
 	exists,
-	readDir,
 	mkdir,
-	writeTextFile,
+	readDir,
 	readTextFile,
 	remove,
+	stat,
+	writeTextFile,
 } from "@tauri-apps/plugin-fs";
-import { join, dirname as pathDirname } from "@tauri-apps/api/path";
-import { invoke } from "@tauri-apps/api/core";
 import { Command } from "@tauri-apps/plugin-shell";
-import {
-	IFileSystemRepository,
-	FileInfo,
+import type {
 	DirectoryEntry,
+	FileInfo,
+	IFileSystemRepository,
 } from "../../domain/repositories/IFileSystemRepository";
 
 /**
@@ -174,6 +174,16 @@ Add-Type -AssemblyName Microsoft.VisualBasic
 	 */
 	async readTextFile(path: string): Promise<string> {
 		return readTextFile(path);
+	}
+
+	/**
+	 * Read UTF-8 text with optional byte cap through Rust IPC.
+	 */
+	async readText(path: string, maxBytes?: number): Promise<string> {
+		return invoke<string>("read_file_text", {
+			path,
+			maxBytes: maxBytes ?? null,
+		});
 	}
 
 	/**

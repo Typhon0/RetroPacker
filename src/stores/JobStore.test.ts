@@ -9,12 +9,13 @@ function createJob(
 	originalSize: number,
 	status: JobStatus,
 	compressionRatio?: number,
+	system = "PS2",
 ): JobState {
 	return new JobState(workflow, {
 		id,
 		filename: `${id}.iso`,
 		path: `/games/${id}.iso`,
-		system: "PS2",
+		system,
 		status,
 		progress: status === "completed" ? 100 : 0,
 		originalSize,
@@ -34,8 +35,14 @@ afterEach(() => {
 
 describe("JobStore compression summaries", () => {
 	it("computes workflow-level estimated savings from compression ratios", () => {
-		jobStore.addJob("compress", createJob("compress", "a", 1000, "completed", 75));
-		jobStore.addJob("compress", createJob("compress", "b", 3000, "completed", 50));
+		jobStore.addJob(
+			"compress",
+			createJob("compress", "a", 1000, "completed", 75),
+		);
+		jobStore.addJob(
+			"compress",
+			createJob("compress", "b", 3000, "completed", 50),
+		);
 		jobStore.addJob("compress", createJob("compress", "c", 2000, "completed"));
 
 		const summary = jobStore.queueSummaries.compress.value;
@@ -47,8 +54,14 @@ describe("JobStore compression summaries", () => {
 	});
 
 	it("aggregates estimated savings in global summary across workflows", () => {
-		jobStore.addJob("compress", createJob("compress", "c1", 1000, "completed", 80));
-		jobStore.addJob("extract", createJob("extract", "e1", 2000, "completed", 60));
+		jobStore.addJob(
+			"compress",
+			createJob("compress", "c1", 1000, "completed", 80),
+		);
+		jobStore.addJob(
+			"extract",
+			createJob("extract", "e1", 2000, "completed", 60),
+		);
 		jobStore.addJob("verify", createJob("verify", "v1", 500, "completed"));
 
 		const globalSummary = jobStore.globalSummary.value;
@@ -56,19 +69,22 @@ describe("JobStore compression summaries", () => {
 		expect(globalSummary.jobsWithCompressionEstimate).toBe(2);
 		expect(globalSummary.estimatedCompressedBytes).toBeCloseTo(2000, 6);
 		expect(globalSummary.estimatedSavedBytes).toBeCloseTo(1000, 6);
-		expect(globalSummary.estimatedCompressionRatio).toBeCloseTo(
-			66.6666667,
-			4,
-		);
+		expect(globalSummary.estimatedCompressionRatio).toBeCloseTo(66.6666667, 4);
 	});
 
 	it("ignores non-completed jobs when calculating saved-space estimates", () => {
-		jobStore.addJob("compress", createJob("compress", "done", 1000, "completed", 50));
+		jobStore.addJob(
+			"compress",
+			createJob("compress", "done", 1000, "completed", 50),
+		);
 		jobStore.addJob(
 			"compress",
 			createJob("compress", "running", 2000, "processing", 40),
 		);
-		jobStore.addJob("compress", createJob("compress", "failed", 500, "failed", 20));
+		jobStore.addJob(
+			"compress",
+			createJob("compress", "failed", 500, "failed", 20),
+		);
 
 		const summary = jobStore.queueSummaries.compress.value;
 
@@ -82,7 +98,10 @@ describe("JobStore compression summaries", () => {
 
 describe("JobStore operations (Map index)", () => {
 	it("addJob adds to both array and index", () => {
-		const job = jobStore.addJob("compress", createJob("compress", "j1", 1000, "pending"));
+		const job = jobStore.addJob(
+			"compress",
+			createJob("compress", "j1", 1000, "pending"),
+		);
 		expect(jobStore.getJob("compress", "j1")).toBe(job);
 		expect(jobStore.getQueue("compress").length).toBe(1);
 	});
@@ -99,8 +118,14 @@ describe("JobStore operations (Map index)", () => {
 	});
 
 	it("getJobById finds job across all workflows", () => {
-		jobStore.addJob("compress", createJob("compress", "cross-1", 1000, "pending"));
-		jobStore.addJob("extract", createJob("extract", "cross-2", 2000, "pending"));
+		jobStore.addJob(
+			"compress",
+			createJob("compress", "cross-1", 1000, "pending"),
+		);
+		jobStore.addJob(
+			"extract",
+			createJob("extract", "cross-2", 2000, "pending"),
+		);
 
 		expect(jobStore.getJobById("cross-1")?.workflow).toBe("compress");
 		expect(jobStore.getJobById("cross-2")?.workflow).toBe("extract");
@@ -123,9 +148,18 @@ describe("JobStore operations (Map index)", () => {
 	});
 
 	it("removeJob only removes targeted job, preserves others", () => {
-		jobStore.addJob("compress", createJob("compress", "keep-1", 1000, "pending"));
-		jobStore.addJob("compress", createJob("compress", "remove", 2000, "pending"));
-		jobStore.addJob("compress", createJob("compress", "keep-2", 3000, "pending"));
+		jobStore.addJob(
+			"compress",
+			createJob("compress", "keep-1", 1000, "pending"),
+		);
+		jobStore.addJob(
+			"compress",
+			createJob("compress", "remove", 2000, "pending"),
+		);
+		jobStore.addJob(
+			"compress",
+			createJob("compress", "keep-2", 3000, "pending"),
+		);
 
 		jobStore.removeJob("compress", "remove");
 
@@ -173,6 +207,81 @@ describe("JobStore queue stats", () => {
 		expect(stats.queueLength).toBe(0);
 		expect(stats.pendingCount).toBe(0);
 	});
+
+	it("ignores linked cue/bin companion rows in stats and runtime snapshots", () => {
+		jobStore.addJob("compress", {
+			id: "cue-job",
+			filename: "Oddworld.cue",
+			path: "/games/Oddworld.cue",
+			system: "PS1",
+			status: "pending",
+			progress: 0,
+			originalSize: 103,
+			outputLog: [],
+			strategy: "createcd",
+		});
+		jobStore.addJob("compress", {
+			id: "bin-job",
+			filename: "Oddworld.bin",
+			path: "/games/Oddworld.bin",
+			system: "Unknown",
+			status: "pending",
+			progress: 0,
+			originalSize: 644_000_000,
+			outputLog: [],
+			strategy: "createcd",
+		});
+
+		const stats = jobStore.queueStats.compress.value;
+		const runtime = jobStore.runtimeByWorkflow.compress.value;
+
+		expect(stats.queueLength).toBe(1);
+		expect(stats.pendingCount).toBe(1);
+		expect(Object.keys(runtime)).toEqual(["cue-job"]);
+	});
+
+	it("ignores linked ccd/cue/img companions and keeps one visible job", () => {
+		jobStore.addJob("compress", {
+			id: "ccd-job",
+			filename: "Silent Hill.ccd",
+			path: "/games/Silent Hill.ccd",
+			system: "Unknown",
+			status: "pending",
+			progress: 0,
+			originalSize: 753,
+			outputLog: [],
+			strategy: "createcd",
+		});
+		jobStore.addJob("compress", {
+			id: "cue-job",
+			filename: "Silent Hill.cue",
+			path: "/games/Silent Hill.cue",
+			system: "PS1",
+			status: "pending",
+			progress: 0,
+			originalSize: 946,
+			outputLog: [],
+			strategy: "createcd",
+		});
+		jobStore.addJob("compress", {
+			id: "img-job",
+			filename: "Silent Hill.img",
+			path: "/games/Silent Hill.img",
+			system: "Unknown",
+			status: "pending",
+			progress: 0,
+			originalSize: 605 * 1024 * 1024,
+			outputLog: [],
+			strategy: "createcd",
+		});
+
+		const stats = jobStore.queueStats.compress.value;
+		const runtime = jobStore.runtimeByWorkflow.compress.value;
+
+		expect(stats.queueLength).toBe(1);
+		expect(stats.pendingCount).toBe(1);
+		expect(Object.keys(runtime)).toEqual(["cue-job"]);
+	});
 });
 
 // ─── Processing & Retry ──────────────────────────────────────
@@ -190,9 +299,18 @@ describe("JobStore processing & retry", () => {
 	});
 
 	it("retryFailed resets failed jobs to pending and adds start requests", () => {
-		const j1 = jobStore.addJob("compress", createJob("compress", "r1", 1000, "failed"));
-		const j2 = jobStore.addJob("compress", createJob("compress", "r2", 1000, "completed"));
-		const j3 = jobStore.addJob("compress", createJob("compress", "r3", 1000, "failed"));
+		const j1 = jobStore.addJob(
+			"compress",
+			createJob("compress", "r1", 1000, "failed"),
+		);
+		const j2 = jobStore.addJob(
+			"compress",
+			createJob("compress", "r2", 1000, "completed"),
+		);
+		const j3 = jobStore.addJob(
+			"compress",
+			createJob("compress", "r3", 1000, "failed"),
+		);
 
 		const retried = jobStore.retryFailed("compress");
 
@@ -213,7 +331,8 @@ describe("JobStore processing & retry", () => {
 		// Duplicate request is ignored
 		jobStore.requestStart("compress", "start-1");
 		expect(
-			jobStore.startRequests.compress.value.filter((r) => r === "start-1").length,
+			jobStore.startRequests.compress.value.filter((r) => r === "start-1")
+				.length,
 		).toBe(1);
 
 		jobStore.consumeStartRequest("compress", "start-1");
@@ -225,8 +344,14 @@ describe("JobStore processing & retry", () => {
 
 describe("JobStore updateJob & appendLog", () => {
 	it("updateJob applies partial updates to existing job", () => {
-		const job = jobStore.addJob("compress", createJob("compress", "upd", 1000, "pending"));
-		jobStore.updateJob("compress", "upd", { status: "processing", system: "Wii" });
+		const job = jobStore.addJob(
+			"compress",
+			createJob("compress", "upd", 1000, "pending"),
+		);
+		jobStore.updateJob("compress", "upd", {
+			status: "processing",
+			system: "Wii",
+		});
 
 		expect(job.status.value).toBe("processing");
 		expect(job.system.value).toBe("Wii");
@@ -237,8 +362,23 @@ describe("JobStore updateJob & appendLog", () => {
 		jobStore.updateJob("compress", "nonexistent", { status: "completed" });
 	});
 
+	it("blocks status transition to processing when platform is unknown", () => {
+		const job = jobStore.addJob(
+			"compress",
+			createJob("compress", "unknown", 1000, "pending", undefined, "Unknown"),
+		);
+
+		jobStore.updateJob("compress", "unknown", { status: "processing" });
+
+		expect(job.status.value).toBe("pending");
+		expect(job.errorMessage.value).toContain("Platform unknown");
+	});
+
 	it("appendLog adds log line to existing job", () => {
-		const job = jobStore.addJob("compress", createJob("compress", "log", 1000, "pending"));
+		const job = jobStore.addJob(
+			"compress",
+			createJob("compress", "log", 1000, "pending"),
+		);
 		jobStore.appendLog("compress", "log", "Test log line");
 		job.flushBufferedLogs();
 		expect(job.outputLog.value).toContain("Test log line");
@@ -251,7 +391,10 @@ describe("JobStore active jobs", () => {
 	it("activeJobs and hasActiveJobs reflect processing state", () => {
 		expect(jobStore.hasActiveJobs.value).toBe(false);
 
-		const job = jobStore.addJob("compress", createJob("compress", "act", 1000, "processing"));
+		const job = jobStore.addJob(
+			"compress",
+			createJob("compress", "act", 1000, "processing"),
+		);
 		expect(jobStore.hasActiveJobs.value).toBe(true);
 		expect(jobStore.activeJobs.value.length).toBe(1);
 		expect(jobStore.activeJobs.value[0]).toBe(job);

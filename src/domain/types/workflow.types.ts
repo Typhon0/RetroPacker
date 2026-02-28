@@ -42,5 +42,3 @@ export type CompressionStrategy = "createcd" | "createdvd" | "raw";
  * Verification result status.
  */
 export type VerificationResult = "pass" | "fail" | "unknown";
-
-

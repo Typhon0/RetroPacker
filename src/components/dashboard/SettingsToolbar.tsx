@@ -1,3 +1,4 @@
+import { Cpu } from "lucide-react";
 import {
 	Select,
 	SelectContent,
@@ -5,11 +6,10 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { Cpu } from "lucide-react";
 import {
+	type CompressionPreset,
+	type Platform,
 	usePackerStore,
-	CompressionPreset,
-	Platform,
 } from "@/stores/usePackerStore";
 
 // This component is now exclusively for the Compress workflow

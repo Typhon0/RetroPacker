@@ -5,17 +5,17 @@
  * @module data/repositories/ZustandSettingsRepository
  */
 
-import { usePackerStore } from "../../stores/usePackerStore";
 import type {
-	ISettingsRepository,
 	AppSettings,
+	ISettingsRepository,
 } from "../../domain/repositories/ISettingsRepository";
 import type {
-	CompressionPreset,
 	ChdSettings,
+	CompressionPreset,
 	DolphinSettings,
 } from "../../domain/types/settings.types";
 import type { WorkflowType } from "../../domain/types/workflow.types";
+import { usePackerStore } from "../../stores/usePackerStore";
 
 /**
  * Adapter that implements ISettingsRepository using the existing Zustand store.

@@ -31,9 +31,6 @@
 			"icons/icon.icns",
 			"icons/icon.ico"
 		],
-		"externalBin": [
-			"binaries/chdman",
-			"binaries/DolphinTool"
-		]
+		"externalBin": ["binaries/chdman", "binaries/DolphinTool"]
 	}
 }

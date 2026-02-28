@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
-import { jobStore } from "@/stores/JobStore";
 import { useSignalValue } from "@/hooks/useSignalValue";
+import { jobStore } from "@/stores/JobStore";
 
 /**
  * Hook to prevent system sleep during active processing.
@@ -52,7 +52,7 @@ export function useSleepPrevention() {
 
 		return () => {
 			if (wakeLockRef.current) {
-				wakeLockRef.current.release().catch(() => { });
+				wakeLockRef.current.release().catch(() => {});
 				wakeLockRef.current = null;
 			}
 		};

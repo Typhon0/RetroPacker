@@ -8,6 +8,7 @@ export const PLATFORM = {
 	PSP: "psp",
 	SATURN: "saturn",
 	DREAMCAST: "dreamcast",
+	SEGACD: "segacd",
 	GAMECUBE: "gamecube",
 	WII: "wii",
 } as const;
@@ -24,10 +25,12 @@ export type DetectedSystem =
 	| "PSP"
 	| "Saturn"
 	| "Dreamcast"
+	| "SegaCD"
 	| "GameCube"
 	| "Wii"
 	| "Switch"
 	| "CHD"
+	| "Unsupported"
 	| "Unknown";
 
 /**
@@ -63,6 +66,18 @@ export function isNintendoSystem(system: DetectedSystem | string): boolean {
 }
 
 /**
+ * Check if a detected system is a Sega platform.
+ */
+export function isSegaPlatform(system: DetectedSystem | string): boolean {
+	const normalized = system.toLowerCase();
+	return (
+		normalized === "saturn" ||
+		normalized === "dreamcast" ||
+		normalized === "segacd"
+	);
+}
+
+/**
  * Map display names to platform enum values.
  */
 export const PLATFORM_DISPLAY_NAMES: Record<Platform, string> = {
@@ -72,7 +87,7 @@ export const PLATFORM_DISPLAY_NAMES: Record<Platform, string> = {
 	[PLATFORM.PSP]: "PlayStation Portable",
 	[PLATFORM.SATURN]: "Sega Saturn",
 	[PLATFORM.DREAMCAST]: "Sega Dreamcast",
+	[PLATFORM.SEGACD]: "Sega CD",
 	[PLATFORM.GAMECUBE]: "Nintendo GameCube",
 	[PLATFORM.WII]: "Nintendo Wii",
 };
-

@@ -10,7 +10,7 @@ import {
 	requestPermission,
 	sendNotification,
 } from "@tauri-apps/plugin-notification";
-import {
+import type {
 	INotificationService,
 	NotificationOptions,
 } from "../../domain/repositories/INotificationService";

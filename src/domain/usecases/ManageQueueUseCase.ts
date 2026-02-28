@@ -1,10 +1,12 @@
-import { JobProps } from "../entities/Job";
-import { WorkflowType } from "../types/workflow.types";
-import { CompressionStrategy } from "../types/workflow.types";
-import { IJobRepository } from "../repositories/IJobRepository";
-import { IFileSystemRepository } from "../repositories/IFileSystemRepository";
-import { DetectSystemUseCase } from "./DetectSystemUseCase";
 import { v4 as uuidv4 } from "uuid";
+import type { JobProps } from "../entities/Job";
+import type { IFileSystemRepository } from "../repositories/IFileSystemRepository";
+import type { IJobRepository } from "../repositories/IJobRepository";
+import type {
+	CompressionStrategy,
+	WorkflowType,
+} from "../types/workflow.types";
+import type { DetectSystemUseCase } from "./DetectSystemUseCase";
 
 /**
  * Dependencies for ManageQueueUseCase.
@@ -25,27 +27,75 @@ export interface WorkflowFileConfig {
 	readonly supportedText: string;
 }
 
+export type QueueAddSkipReason =
+	| "invalid_extension"
+	| "unsupported_archive"
+	| "unsupported_content";
+
+export interface QueueAddResult {
+	readonly added: boolean;
+	readonly filePath: string;
+	readonly filename: string;
+	readonly reason?: QueueAddSkipReason;
+	readonly message?: string;
+}
+
+export interface QueueAddProgress {
+	readonly phase: "scanning" | "analyzing";
+	readonly scannedDirectories?: number;
+	readonly pendingDirectories?: number;
+	readonly discoveredFiles?: number;
+	readonly analyzedFiles?: number;
+	readonly totalFiles?: number;
+	readonly currentPath?: string;
+}
+
+export type QueueAddProgressCallback = (progress: QueueAddProgress) => void;
+
+interface BuildJobResult {
+	readonly job?: JobProps;
+	readonly reason?: QueueAddSkipReason;
+	readonly message?: string;
+}
+
+const ARCHIVE_EXTENSIONS = new Set(["zip", "7z", "rar"]);
+export const UNSUPPORTED_ARCHIVE_MESSAGE =
+	"Unsupported: Please extract archives first.";
+export const UNSUPPORTED_PS3_EXECUTABLE_MESSAGE =
+	"Unsupported: PS3 executable detected (EBOOT.BIN). Add a disc image instead.";
+
 /**
  * Workflow file configurations.
  */
 export const WORKFLOW_FILE_CONFIGS: Record<WorkflowType, WorkflowFileConfig> = {
 	compress: {
-		extensions: ["iso", "cue", "bin", "gdi", "toc", "wbfs", "gcm"],
+		extensions: [
+			"iso",
+			"cue",
+			"bin",
+			"gdi",
+			"toc",
+			"ccd",
+			"img",
+			"mdf",
+			"wbfs",
+			"gcm",
+		],
 		filterName: "Raw Disc Images",
 		dropLabel: "Drop raw disc images to compress",
-		supportedText: ".iso, .cue, .bin, .gdi, .gcm",
+		supportedText: ".iso, .cue, .bin, .gdi, .img, .mdf, .ccd, .gcm",
 	},
 	extract: {
-		extensions: ["chd", "rvz", "gcz", "wbfs"],
+		extensions: ["chd", "rvz", "gcz", "wbfs", "wia"],
 		filterName: "Compressed Archives",
 		dropLabel: "Drop compressed files to extract",
-		supportedText: ".chd, .rvz, .gcz, .wbfs",
+		supportedText: ".chd, .rvz, .gcz, .wbfs, .wia",
 	},
 	verify: {
-		extensions: ["chd", "rvz", "gcz", "wbfs", "gcm"],
+		extensions: ["chd", "rvz", "gcz", "wbfs", "gcm", "wia"],
 		filterName: "Compressed Files",
 		dropLabel: "Drop files to verify integrity",
-		supportedText: ".chd, .rvz, .gcz, .wbfs, .gcm",
+		supportedText: ".chd, .rvz, .gcz, .wbfs, .gcm, .wia",
 	},
 	info: {
 		extensions: [
@@ -108,10 +158,20 @@ export class ManageQueueUseCase {
 		filePath: string,
 		filename: string,
 		size: number,
-	): Promise<void> {
-		const job = await this.buildJob(workflow, filePath, filename, size);
-		if (!job) return;
-		this.deps.jobRepository.addJob(workflow, job);
+	): Promise<QueueAddResult> {
+		const result = await this.buildJob(workflow, filePath, filename, size);
+		if (!result.job) {
+			return {
+				added: false,
+				filePath,
+				filename,
+				reason: result.reason,
+				message: result.message,
+			};
+		}
+
+		this.deps.jobRepository.addJob(workflow, result.job);
+		return { added: true, filePath, filename };
 	}
 
 	/**
@@ -120,8 +180,21 @@ export class ManageQueueUseCase {
 	 * @param workflow - Target workflow
 	 * @param paths - Array of file paths
 	 */
-	async addFiles(workflow: WorkflowType, paths: string[]): Promise<void> {
+	async addFiles(
+		workflow: WorkflowType,
+		paths: string[],
+		onProgress?: QueueAddProgressCallback,
+	): Promise<QueueAddResult[]> {
 		const { fileSystem, jobRepository } = this.deps;
+		let analyzedFiles = 0;
+		if (onProgress) {
+			onProgress({
+				phase: "analyzing",
+				discoveredFiles: paths.length,
+				analyzedFiles: 0,
+				totalFiles: paths.length,
+			});
+		}
 		const jobs = await this.mapWithConcurrency(
 			paths,
 			ManageQueueUseCase.FILE_ANALYSIS_CONCURRENCY,
@@ -136,15 +209,42 @@ export class ManageQueueUseCase {
 					console.warn(`Failed to stat file ${filePath}, assuming size 0`, e);
 				}
 
-				return this.buildJob(workflow, filePath, name, size);
+				const built = await this.buildJob(workflow, filePath, name, size);
+				analyzedFiles += 1;
+				onProgress?.({
+					phase: "analyzing",
+					discoveredFiles: paths.length,
+					analyzedFiles,
+					totalFiles: paths.length,
+					currentPath: filePath,
+				});
+
+				return built;
 			},
 		);
 
-		for (const job of jobs) {
-			if (job) {
-				jobRepository.addJob(workflow, job);
+		const results: QueueAddResult[] = [];
+		for (let index = 0; index < jobs.length; index++) {
+			const result = jobs[index];
+			const filePath = paths[index];
+			const filename = filePath.split(/[\\/]/).pop() ?? "unknown";
+
+			if (result.job) {
+				jobRepository.addJob(workflow, result.job);
+				results.push({ added: true, filePath, filename });
+				continue;
 			}
+
+			results.push({
+				added: false,
+				filePath,
+				filename,
+				reason: result.reason,
+				message: result.message,
+			});
 		}
+
+		return results;
 	}
 
 	/**
@@ -156,9 +256,10 @@ export class ManageQueueUseCase {
 	async addFolders(
 		workflow: WorkflowType,
 		folderPaths: string[],
-	): Promise<void> {
-		const files = await this.scanFolders(workflow, folderPaths);
-		await this.addFiles(workflow, files);
+		onProgress?: QueueAddProgressCallback,
+	): Promise<QueueAddResult[]> {
+		const files = await this.scanFolders(workflow, folderPaths, onProgress);
+		return this.addFiles(workflow, files, onProgress);
 	}
 
 	/**
@@ -244,12 +345,26 @@ export class ManageQueueUseCase {
 	private async scanFolders(
 		workflow: WorkflowType,
 		folderPaths: string[],
+		onProgress?: QueueAddProgressCallback,
 	): Promise<string[]> {
 		const { fileSystem } = this.deps;
 		const config = WORKFLOW_FILE_CONFIGS[workflow];
 		const foundFiles: string[] = [];
 		const pendingDirectories = [...folderPaths];
 		const visited = new Set<string>();
+		let scannedDirectories = 0;
+
+		const emitScanProgress = (currentPath?: string): void => {
+			onProgress?.({
+				phase: "scanning",
+				scannedDirectories,
+				pendingDirectories: pendingDirectories.length,
+				discoveredFiles: foundFiles.length,
+				currentPath,
+			});
+		};
+
+		emitScanProgress();
 
 		const worker = async (): Promise<void> => {
 			while (true) {
@@ -257,6 +372,8 @@ export class ManageQueueUseCase {
 				if (!directory) return;
 				if (visited.has(directory)) continue;
 				visited.add(directory);
+				scannedDirectories += 1;
+				emitScanProgress(directory);
 
 				try {
 					const entries = await fileSystem.readDirectory(directory);
@@ -289,12 +406,17 @@ export class ManageQueueUseCase {
 
 						if (!resolved.entry.isFile) continue;
 						const ext = resolved.entry.name.split(".").pop()?.toLowerCase();
-						if (ext && config.extensions.includes(ext)) {
+						if (
+							ext &&
+							(config.extensions.includes(ext) || ARCHIVE_EXTENSIONS.has(ext))
+						) {
 							foundFiles.push(resolved.path);
 						}
 					}
+					emitScanProgress(directory);
 				} catch (e) {
 					console.warn(`Failed to read dir ${directory}`, e);
+					emitScanProgress(directory);
 				}
 			}
 		};
@@ -313,32 +435,48 @@ export class ManageQueueUseCase {
 		filePath: string,
 		filename: string,
 		size: number,
-	): Promise<JobProps | null> {
+	): Promise<BuildJobResult> {
 		const { detectSystem } = this.deps;
 		const config = WORKFLOW_FILE_CONFIGS[workflow];
 
 		const ext = filePath.split(".").pop()?.toLowerCase();
+		if (ext && ARCHIVE_EXTENSIONS.has(ext)) {
+			return {
+				reason: "unsupported_archive",
+				message: UNSUPPORTED_ARCHIVE_MESSAGE,
+			};
+		}
+
 		if (!ext || !config.extensions.includes(ext)) {
 			console.warn(`File ${filename} not valid for ${workflow} workflow`);
-			return null;
+			return { reason: "invalid_extension" };
 		}
 
 		const system = await detectSystem.execute(filePath);
-		const strategy = this.getStrategy(filePath);
+		if (system === "Unsupported") {
+			return {
+				reason: "unsupported_content",
+				message: UNSUPPORTED_PS3_EXECUTABLE_MESSAGE,
+			};
+		}
+
+		const strategy = this.getStrategy(filePath, system);
 		const discInfo = this.extractDiscInfo(filename);
 
 		return {
-			id: uuidv4(),
-			filename,
-			path: filePath,
-			system,
-			status: "pending",
-			progress: 0,
-			originalSize: size,
-			outputLog: [],
-			strategy,
-			discGroup: discInfo?.baseName,
-			discNumber: discInfo?.discNumber,
+			job: {
+				id: uuidv4(),
+				filename,
+				path: filePath,
+				system,
+				status: "pending",
+				progress: 0,
+				originalSize: size,
+				outputLog: [],
+				strategy,
+				discGroup: discInfo?.baseName,
+				discNumber: discInfo?.discNumber,
+			},
 		};
 	}
 
@@ -387,18 +525,32 @@ export class ManageQueueUseCase {
 	/**
 	 * Get compression strategy from file path.
 	 */
-	private getStrategy(filePath: string): CompressionStrategy {
+	private getStrategy(filePath: string, system?: string): CompressionStrategy {
 		const ext = filePath.split(".").pop()?.toLowerCase();
+
+		// CD-based platforms always use createcd
+		const lowerSystem = system?.toLowerCase() ?? "";
+		if (
+			lowerSystem === "ps1" ||
+			lowerSystem === "saturn" ||
+			lowerSystem === "dreamcast" ||
+			lowerSystem === "segacd"
+		) {
+			return "createcd";
+		}
+
 		switch (ext) {
 			case "iso":
+			case "img":
+			case "mdf":
 				return "createdvd";
 			case "cue":
 			case "toc":
 			case "gdi":
+			case "ccd":
 				return "createcd";
 			default:
 				return "createcd";
 		}
 	}
 }
-

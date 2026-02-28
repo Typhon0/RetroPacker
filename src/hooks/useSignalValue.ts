@@ -1,5 +1,5 @@
-import { useSyncExternalStore } from "react";
 import type { ReadonlySignal } from "@preact/signals-core";
+import { useSyncExternalStore } from "react";
 
 type SubscribableSignal<T> = ReadonlySignal<T> & {
 	subscribe: (callback: () => void) => () => void;

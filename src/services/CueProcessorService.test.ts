@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import type {
+	DirectoryEntry,
+	IFileSystemRepository,
+} from "@/domain/repositories/IFileSystemRepository";
 import { CueProcessorService } from "./CueProcessorService";
-import type { IFileSystemRepository } from "@/domain/repositories/IFileSystemRepository";
 
 // ── Helpers ──────────────────────────────────────────────────
 
@@ -45,6 +48,9 @@ function createMockFileSystem(
 		async readTextFile() {
 			return "";
 		},
+		async readText() {
+			return "";
+		},
 		async removeDirectory() {
 			return;
 		},
@@ -55,25 +61,35 @@ function createMockFileSystem(
 	};
 }
 
+function fileEntry(name: string): DirectoryEntry {
+	return {
+		name,
+		isFile: true,
+		isDirectory: false,
+	};
+}
+
+const MODE2_CUE = `  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n`;
+
 // ── repairCue ────────────────────────────────────────────────
 
 describe("CueProcessorService.repairCue", () => {
 	it("strips absolute Windows paths from FILE directive", () => {
-		const input = `FILE "C:\\Users\\Name\\game.bin" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n`;
+		const input = `FILE "C:\\Users\\Name\\game.bin" BINARY\n${MODE2_CUE}`;
 		const result = CueProcessorService.repairCue(input);
 		expect(result).toContain(`FILE "game.bin" BINARY`);
 		expect(result).not.toContain("C:\\");
 	});
 
 	it("strips absolute Unix paths from FILE directive", () => {
-		const input = `FILE "/home/user/roms/game.bin" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n`;
+		const input = `FILE "/home/user/roms/game.bin" BINARY\n${MODE2_CUE}`;
 		const result = CueProcessorService.repairCue(input);
 		expect(result).toContain(`FILE "game.bin" BINARY`);
 		expect(result).not.toContain("/home/");
 	});
 
 	it("leaves relative paths unchanged", () => {
-		const input = `FILE "game.bin" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n`;
+		const input = `FILE "game.bin" BINARY\n${MODE2_CUE}`;
 		const result = CueProcessorService.repairCue(input);
 		expect(result).toBe(input);
 	});
@@ -113,11 +129,14 @@ describe("CueProcessorService.generateCue", () => {
 // ── prepareInput ─────────────────────────────────────────────
 
 describe("CueProcessorService.prepareInput", () => {
-	it("repairs a .cue file with absolute path and writes to temp", async () => {
+	it("writes repaired temp cue for absolute path references", async () => {
 		const writtenFiles: Record<string, string> = {};
 		const fs = createMockFileSystem({
-			async readTextFile() {
-				return `FILE "D:\\ISOs\\PS1\\Crash Bandicoot.bin" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n`;
+			async readText() {
+				return `FILE "D:\\ISOs\\PS1\\Crash Bandicoot.bin" BINARY\n${MODE2_CUE}`;
+			},
+			async exists(path) {
+				return path.endsWith("Crash Bandicoot.bin");
 			},
 			async writeTextFile(path, content) {
 				writtenFiles[path] = content;
@@ -126,20 +145,150 @@ describe("CueProcessorService.prepareInput", () => {
 
 		const result = await CueProcessorService.prepareInput(
 			"/roms/Crash Bandicoot.cue",
-			"/output",
+			"/output/.retropacker_temp",
 			fs,
 		);
 
-		expect(result).toBe("/output/.retropacker_temp/Crash Bandicoot.cue");
-		expect(writtenFiles[result!]).toContain(
+		expect(result.success).toBe(true);
+		const modifiedPath = result.modifiedPath;
+		if (!modifiedPath) {
+			throw new Error("Expected a temp cue path for repaired cue");
+		}
+		expect(modifiedPath).toBe("/output/.retropacker_temp/Crash Bandicoot.cue");
+		expect(writtenFiles[modifiedPath]).toContain(
 			`FILE "Crash Bandicoot.bin" BINARY`,
 		);
-		expect(writtenFiles[result!]).not.toContain("D:\\");
+		expect(writtenFiles[modifiedPath]).not.toContain("D:\\");
 	});
 
-	it("generates a CUE for a naked .bin file without companion", async () => {
+	it("returns success without override when cue is already valid", async () => {
+		const fs = createMockFileSystem({
+			async readText() {
+				return `FILE "game.bin" BINARY\n${MODE2_CUE}`;
+			},
+			async exists(path) {
+				return path.endsWith("/roms/game.bin");
+			},
+		});
+
+		const result = await CueProcessorService.prepareInput(
+			"/roms/game.cue",
+			"/output/.retropacker_temp",
+			fs,
+		);
+
+		expect(result.success).toBe(true);
+		expect(result.modifiedPath).toBeUndefined();
+	});
+
+	it("relinks renamed single-bin cues and writes temp cue", async () => {
 		const writtenFiles: Record<string, string> = {};
 		const fs = createMockFileSystem({
+			async readText() {
+				return `FILE "old-name.bin" BINARY\n${MODE2_CUE}`;
+			},
+			async readDirectory() {
+				return [fileEntry("new-name.bin")];
+			},
+			async exists(path) {
+				return path.endsWith("/roms/new-name.bin");
+			},
+			async writeTextFile(path, content) {
+				writtenFiles[path] = content;
+			},
+		});
+
+		const result = await CueProcessorService.prepareInput(
+			"/roms/game.cue",
+			"/output/.retropacker_temp",
+			fs,
+		);
+
+		expect(result.success).toBe(true);
+		const modifiedPath = result.modifiedPath;
+		if (!modifiedPath) {
+			throw new Error("Expected a temp cue path for relinked cue");
+		}
+		expect(modifiedPath).toBe("/output/.retropacker_temp/game.cue");
+		expect(writtenFiles[modifiedPath]).toContain(`FILE "new-name.bin" BINARY`);
+	});
+
+	it("repairs all FILE lines in a multi-track cue", async () => {
+		const writtenFiles: Record<string, string> = {};
+		const fs = createMockFileSystem({
+			async readText() {
+				return [
+					`FILE "D:\\roms\\Tomb Raider (Track 1).bin" BINARY`,
+					`  TRACK 01 MODE2/2352`,
+					`    INDEX 01 00:00:00`,
+					`FILE "D:\\roms\\Tomb Raider (Track 2).bin" BINARY`,
+					`  TRACK 02 AUDIO`,
+					`    INDEX 00 00:00:00`,
+				].join("\n");
+			},
+			async exists(path) {
+				return (
+					path.endsWith("Tomb Raider (Track 1).bin") ||
+					path.endsWith("Tomb Raider (Track 2).bin")
+				);
+			},
+			async writeTextFile(path, content) {
+				writtenFiles[path] = content;
+			},
+		});
+
+		const result = await CueProcessorService.prepareInput(
+			"/roms/Tomb Raider.cue",
+			"/output/.retropacker_temp",
+			fs,
+		);
+
+		expect(result.success).toBe(true);
+		const modifiedPath = result.modifiedPath;
+		if (!modifiedPath) {
+			throw new Error("Expected a temp cue path for repaired multi-track cue");
+		}
+		expect(modifiedPath).toBe("/output/.retropacker_temp/Tomb Raider.cue");
+		expect(writtenFiles[modifiedPath]).toContain(
+			`FILE "Tomb Raider (Track 1).bin" BINARY`,
+		);
+		expect(writtenFiles[modifiedPath]).toContain(
+			`FILE "Tomb Raider (Track 2).bin" BINARY`,
+		);
+		expect(writtenFiles[modifiedPath]).not.toContain("D:\\");
+	});
+
+	it("fails when referenced bin is missing from cue directory", async () => {
+		const fs = createMockFileSystem({
+			async readText() {
+				return `FILE "missing.bin" BINARY\n${MODE2_CUE}`;
+			},
+			async readDirectory() {
+				return [fileEntry("other.bin")];
+			},
+			async exists() {
+				return false;
+			},
+		});
+
+		const result = await CueProcessorService.prepareInput(
+			"/roms/game.cue",
+			"/output/.retropacker_temp",
+			fs,
+		);
+
+		expect(result.success).toBe(false);
+		expect(result.errorMessage).toBe(
+			"Referenced .bin file not found in directory.",
+		);
+	});
+
+	it("generates a cue for single-bin input without a companion cue", async () => {
+		const writtenFiles: Record<string, string> = {};
+		const fs = createMockFileSystem({
+			async readDirectory() {
+				return [fileEntry("game.bin")];
+			},
 			async exists() {
 				return false;
 			},
@@ -150,66 +299,76 @@ describe("CueProcessorService.prepareInput", () => {
 
 		const result = await CueProcessorService.prepareInput(
 			"/roms/game.bin",
-			"/output",
+			"/output/.retropacker_temp",
 			fs,
 		);
 
-		expect(result).toBe("/output/.retropacker_temp/game.cue");
-		expect(writtenFiles[result!]).toContain(`FILE "game.bin" BINARY`);
-		expect(writtenFiles[result!]).toContain("MODE2/2352");
+		expect(result.success).toBe(true);
+		const modifiedPath = result.modifiedPath;
+		if (!modifiedPath) {
+			throw new Error("Expected a temp cue path for generated cue");
+		}
+		expect(modifiedPath).toBe("/output/.retropacker_temp/game.cue");
+		expect(writtenFiles[modifiedPath]).toContain(`FILE "game.bin" BINARY`);
+		expect(writtenFiles[modifiedPath]).toContain("MODE2/2352");
 	});
 
-	it("preprocesses companion .cue when .bin has one", async () => {
-		const writtenFiles: Record<string, string> = {};
+	it("switches from .bin to companion .cue when it exists", async () => {
 		const fs = createMockFileSystem({
+			async readText() {
+				return `FILE "game.bin" BINARY\n${MODE2_CUE}`;
+			},
 			async exists(path) {
-				return path.endsWith(".cue");
+				if (path.endsWith("/roms/game.cue")) return true;
+				return path.endsWith("/roms/game.bin");
 			},
-			async readTextFile() {
-				return `FILE "C:\\old\\game.bin" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n`;
-			},
-			async writeTextFile(path, content) {
-				writtenFiles[path] = content;
+			async readDirectory() {
+				return [fileEntry("game.bin"), fileEntry("game.cue")];
 			},
 		});
 
 		const result = await CueProcessorService.prepareInput(
 			"/roms/game.bin",
-			"/output",
+			"/output/.retropacker_temp",
 			fs,
 		);
 
-		// Should have preprocessed the companion .cue, not generated a new one
-		expect(result).toBe("/output/.retropacker_temp/game.cue");
-		expect(writtenFiles[result!]).toContain(`FILE "game.bin" BINARY`);
-		expect(writtenFiles[result!]).not.toContain("C:\\");
+		expect(result.success).toBe(true);
+		expect(result.modifiedPath).toBe("/roms/game.cue");
 	});
 
-	it("returns null for .iso files (no preprocessing needed)", async () => {
+	it("fails for multi-track bin input without cue", async () => {
+		const fs = createMockFileSystem({
+			async exists(path) {
+				return path.endsWith("/roms/Game (Track 1).bin");
+			},
+			async readDirectory() {
+				return [
+					fileEntry("Game (Track 1).bin"),
+					fileEntry("Game (Track 2).bin"),
+				];
+			},
+		});
+
+		const result = await CueProcessorService.prepareInput(
+			"/roms/Game (Track 1).bin",
+			"/output/.retropacker_temp",
+			fs,
+		);
+
+		expect(result.success).toBe(false);
+		expect(result.errorMessage).toBe(
+			"Multi-track .bin detected without a .cue file. A valid .cue sheet is required.",
+		);
+	});
+
+	it("passes through non cue/bin inputs", async () => {
 		const fs = createMockFileSystem();
 		const result = await CueProcessorService.prepareInput(
 			"/roms/game.iso",
-			"/output",
+			"/output/.retropacker_temp",
 			fs,
 		);
-		expect(result).toBeNull();
-	});
-
-	it("creates the temp directory before writing", async () => {
-		const createdDirs: string[] = [];
-		const fs = createMockFileSystem({
-			async exists() {
-				return false;
-			},
-			async createDirectory(path) {
-				createdDirs.push(path);
-			},
-			async writeTextFile() {
-				return;
-			},
-		});
-
-		await CueProcessorService.prepareInput("/roms/game.bin", "/output", fs);
-		expect(createdDirs).toContain("/output/.retropacker_temp");
+		expect(result).toEqual({ success: true });
 	});
 });

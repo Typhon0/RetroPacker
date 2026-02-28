@@ -1,20 +1,20 @@
-import { useEffect, useCallback, useRef } from "react";
-import { WorkflowTabs } from "@/components/dashboard/WorkflowTabs";
-import { GlobalSettings } from "@/components/dashboard/GlobalSettings";
+import { Pause, Play, RotateCcw, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useRef } from "react";
 import { BatchProgressBar } from "@/components/dashboard/BatchProgressBar";
+import { GlobalSettings } from "@/components/dashboard/GlobalSettings";
+import { WorkflowTabs } from "@/components/dashboard/WorkflowTabs";
+import { Button } from "@/components/ui/button";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useQueueProcessor } from "@/hooks/useQueueProcessor";
 import { useSignalValue } from "@/hooks/useSignalValue";
-import { useTaskbarProgress } from "@/hooks/useTaskbarProgress";
 import { useSleepPrevention } from "@/hooks/useSleepPrevention";
-import { jobStore } from "@/stores/JobStore";
-import { Button } from "@/components/ui/button";
-import { Trash2, Play, Pause, RotateCcw } from "lucide-react";
-import { usePackerStore } from "@/stores/usePackerStore";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { useTaskbarProgress } from "@/hooks/useTaskbarProgress";
+import { cn } from "@/lib/utils";
 import { RepositoryProvider } from "@/presentation/context/RepositoryContext";
 import { ProcessRegistry } from "@/services/ProcessRegistry";
-import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import { cn } from "@/lib/utils";
+import { jobStore } from "@/stores/JobStore";
+import { usePackerStore } from "@/stores/usePackerStore";
 
 const MIN_CONCURRENCY = 1;
 const MAX_CONCURRENCY = 16;
@@ -47,9 +47,6 @@ function AppContent() {
 	useEffect(() => {
 		if (hasInitialized.current) return;
 
-		// Restore queue
-		void jobStore.rehydrate();
-
 		// Only auto-detect if we're on the default small value
 		if (
 			concurrency === 2 &&
@@ -70,7 +67,7 @@ function AppContent() {
 
 	const handleConcurrencyChange = useCallback(
 		(e: React.ChangeEvent<HTMLInputElement>) => {
-			const rawValue = parseInt(e.target.value);
+			const rawValue = parseInt(e.target.value, 10);
 			// Validate and clamp input
 			if (Number.isNaN(rawValue)) return; // Don't update on empty/invalid
 			const clamped = Math.min(

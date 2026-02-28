@@ -1,4 +1,9 @@
-import { computed, signal, type ReadonlySignal, type Signal } from "@preact/signals-core";
+import {
+	computed,
+	type ReadonlySignal,
+	type Signal,
+	signal,
+} from "@preact/signals-core";
 import type { JobProps } from "@/domain/entities/Job";
 import type { Platform } from "@/domain/types/platform.types";
 import type {
@@ -48,6 +53,7 @@ export class JobState {
 
 	readonly isProcessing: ReadonlySignal<boolean>;
 	readonly isFailed: ReadonlySignal<boolean>;
+	readonly isReadyToProcess: ReadonlySignal<boolean>;
 	readonly elapsedMs: ReadonlySignal<number | undefined>;
 
 	private logBuffer: string[] = [];
@@ -83,6 +89,11 @@ export class JobState {
 
 		this.isProcessing = computed(() => this.status.value === "processing");
 		this.isFailed = computed(() => this.status.value === "failed");
+		this.isReadyToProcess = computed(
+			() =>
+				this.system.value !== "Unknown" ||
+				this.platformOverride.value !== undefined,
+		);
 		this.elapsedMs = computed(() => {
 			const start = this.startTime.value;
 			const end = this.endTime.value;
@@ -183,10 +194,8 @@ export class JobState {
 		if ("endTime" in updates) this.endTime.value = updates.endTime;
 		if ("etaSeconds" in updates) this.etaSeconds.value = updates.etaSeconds;
 		if ("discGroup" in updates) this.discGroup.value = updates.discGroup;
-		if ("discNumber" in updates)
-			this.discNumber.value = updates.discNumber;
-		if ("sourceHash" in updates)
-			this.sourceHash.value = updates.sourceHash;
+		if ("discNumber" in updates) this.discNumber.value = updates.discNumber;
+		if ("sourceHash" in updates) this.sourceHash.value = updates.sourceHash;
 		if ("verificationResult" in updates) {
 			this.verificationResult.value = updates.verificationResult;
 		}
@@ -201,7 +210,9 @@ export class JobState {
 	toJobProps(): JobProps {
 		const logs =
 			this.logBuffer.length > 0
-				? [...this.outputLog.value, ...this.logBuffer].slice(-MAX_LOG_LINES_PER_JOB)
+				? [...this.outputLog.value, ...this.logBuffer].slice(
+						-MAX_LOG_LINES_PER_JOB,
+					)
 				: this.outputLog.value;
 
 		return {

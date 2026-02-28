@@ -1,15 +1,22 @@
-import React, { useEffect, useMemo, useState } from "react";
+import {
+	AlertTriangle,
+	Archive,
+	FolderOpen,
+	Info,
+	ShieldCheck,
+} from "lucide-react";
+import type React from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { usePackerStore } from "@/stores/usePackerStore";
 import type { WorkflowType } from "@/domain/types/workflow.types";
+import { useSignalValue } from "@/hooks/useSignalValue";
+import { jobStore } from "@/stores/JobStore";
+import { usePackerStore } from "@/stores/usePackerStore";
 import { DropZone } from "./DropZone";
+import { InfoViewer } from "./InfoViewer";
 import { JobTable } from "./JobTable";
 import { SettingsToolbar } from "./SettingsToolbar";
-import { InfoViewer } from "./InfoViewer";
 import { TerminalDrawer } from "./TerminalDrawer";
-import { Archive, FolderOpen, ShieldCheck, Info } from "lucide-react";
-import { jobStore } from "@/stores/JobStore";
-import { useSignalValue } from "@/hooks/useSignalValue";
 
 const WORKFLOW_CONFIG: Record<
 	WorkflowType,
@@ -39,8 +46,22 @@ const WORKFLOW_CONFIG: Record<
 
 export function WorkflowTabs() {
 	const { activeWorkflow, setActiveWorkflow } = usePackerStore();
-	const [selectedJobId, setSelectedJobId] = useState<string | undefined>(undefined);
+	const [selectedJobId, setSelectedJobId] = useState<string | undefined>(
+		undefined,
+	);
 	const activeQueue = useSignalValue(jobStore.queues[activeWorkflow]);
+	const activeRuntime = useSignalValue(
+		jobStore.runtimeByWorkflow[activeWorkflow],
+	);
+	const blockedUnknownCount = useMemo(
+		() =>
+			Object.values(activeRuntime).filter(
+				(runtime) =>
+					runtime.system === "Unknown" &&
+					runtime.platformOverride === undefined,
+			).length,
+		[activeRuntime],
+	);
 
 	const selectedJob = useMemo(() => {
 		if (!selectedJobId) return undefined;
@@ -80,6 +101,15 @@ export function WorkflowTabs() {
 						</TabsTrigger>
 					))}
 				</TabsList>
+
+				{blockedUnknownCount > 0 && (
+					<div className="mt-3 inline-flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-600">
+						<AlertTriangle className="h-4 w-4" />
+						{blockedUnknownCount} job
+						{blockedUnknownCount === 1 ? "" : "s"} blocked: platform unknown.
+						Select a platform in the row to process.
+					</div>
+				)}
 
 				{(Object.keys(WORKFLOW_CONFIG) as WorkflowType[]).map((workflow) => (
 					<TabsContent

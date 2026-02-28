@@ -88,4 +88,3 @@ export const COMPRESSION_LEVEL_MAP: Record<CompressionPreset, number> = {
 export function getCompressionLevel(preset: CompressionPreset): number {
 	return COMPRESSION_LEVEL_MAP[preset];
 }
-

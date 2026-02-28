@@ -5,11 +5,11 @@
  * @module data/repositories/MockCommandExecutor
  */
 
-import {
-	ICommandExecutor,
+import type {
 	BinaryName,
 	CommandCallbacks,
 	CommandResult,
+	ICommandExecutor,
 	SpawnedProcess,
 } from "../../domain/repositories/ICommandExecutor";
 
@@ -79,6 +79,8 @@ export class MockCommandExecutor implements ICommandExecutor {
 		return {
 			code: 0,
 			signal: null,
+			stdout: "",
+			stderr: "",
 		};
 	}
 

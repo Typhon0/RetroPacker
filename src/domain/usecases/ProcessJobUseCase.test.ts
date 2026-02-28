@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JobState } from "@/domain/entities/JobState";
-import { ProcessJobUseCase } from "@/domain/usecases/ProcessJobUseCase";
 import type {
 	BinaryName,
 	CommandCallbacks,
@@ -10,6 +9,9 @@ import type {
 } from "@/domain/repositories/ICommandExecutor";
 import type { IFileSystemRepository } from "@/domain/repositories/IFileSystemRepository";
 import type { INotificationService } from "@/domain/repositories/INotificationService";
+import type { Platform } from "@/domain/types/platform.types";
+import type { CompressionStrategy } from "@/domain/types/workflow.types";
+import { ProcessJobUseCase } from "@/domain/usecases/ProcessJobUseCase";
 import { ProcessRegistry } from "@/services/ProcessRegistry";
 
 class TestCommandExecutor implements ICommandExecutor {
@@ -107,6 +109,9 @@ const baseFileSystem: IFileSystemRepository = {
 	async readTextFile() {
 		return "";
 	},
+	async readText() {
+		return "";
+	},
 	async removeDirectory() {
 		return;
 	},
@@ -148,8 +153,8 @@ function createJob(
 		system: string;
 		path: string;
 		filename: string;
-		strategy: string;
-		platformOverride: string;
+		strategy: CompressionStrategy;
+		platformOverride: Platform;
 	}>,
 ): JobState {
 	return new JobState("compress", {
@@ -161,8 +166,8 @@ function createJob(
 		progress: 0,
 		originalSize: 1024 * 1024,
 		outputLog: [],
-		strategy: (overrides?.strategy as any) ?? "createdvd",
-		platformOverride: overrides?.platformOverride as any,
+		strategy: overrides?.strategy ?? "createdvd",
+		platformOverride: overrides?.platformOverride,
 	});
 }
 
@@ -292,6 +297,98 @@ describe("ProcessJobUseCase", () => {
 		expect(notifications.notifySuccess).not.toHaveBeenCalled();
 		job.dispose();
 		spy.mockRestore();
+	});
+
+	it("keeps unknown jobs pending until a platform override is set", async () => {
+		const job = createJob("unknown-blocked", { system: "Unknown" });
+		const spawnFn = vi.fn();
+		const commandExecutor = new TestCommandExecutor(spawnFn);
+
+		const useCase = new ProcessJobUseCase({
+			commandExecutor,
+			notificationService: createNotificationServiceSpy().service,
+			fileSystem: baseFileSystem,
+		});
+
+		await useCase.execute(job, "/output", "compress", settings);
+
+		expect(spawnFn).not.toHaveBeenCalled();
+		expect(job.status.value).toBe("pending");
+		expect(job.errorMessage.value).toContain("Platform unknown");
+		job.dispose();
+	});
+
+	it("processes unknown .cue input without requiring platform override", async () => {
+		const job = createJob("unknown-cue", {
+			system: "Unknown",
+			path: "/games/unknown-cue.cue",
+			filename: "unknown-cue.cue",
+		});
+		const { executor, spawnedArgs } = createCapturingExecutor();
+		const fileSystem: IFileSystemRepository = {
+			...baseFileSystem,
+			async readText() {
+				return `FILE "unknown-cue.bin" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n`;
+			},
+			async exists(path) {
+				return path.endsWith("/games/unknown-cue.bin");
+			},
+		};
+
+		const useCase = new ProcessJobUseCase({
+			commandExecutor: executor,
+			notificationService: createNotificationServiceSpy().service,
+			fileSystem,
+		});
+
+		await useCase.execute(job, "/output", "compress", settings);
+		await vi.waitFor(() => expect(job.status.value).toBe("completed"));
+
+		const args = spawnedArgs();
+		if (!args) {
+			throw new Error("Expected spawned args to be defined");
+		}
+		expect(args).toContain("createcd");
+		expect(args).toContain("/games/unknown-cue.cue");
+		job.dispose();
+	});
+
+	it("processes unknown .bin input without requiring platform override", async () => {
+		const job = createJob("unknown-bin", {
+			system: "Unknown",
+			path: "/games/unknown-bin.bin",
+			filename: "unknown-bin.bin",
+		});
+		const { executor, spawnedArgs } = createCapturingExecutor();
+		const fileSystem: IFileSystemRepository = {
+			...baseFileSystem,
+			async exists(path) {
+				return path === "/games/unknown-bin.bin";
+			},
+			async readDirectory() {
+				return [{ name: "unknown-bin.bin", isFile: true, isDirectory: false }];
+			},
+		};
+
+		const useCase = new ProcessJobUseCase({
+			commandExecutor: executor,
+			notificationService: createNotificationServiceSpy().service,
+			fileSystem,
+		});
+
+		await useCase.execute(job, "/output", "compress", settings);
+		await vi.waitFor(() => expect(job.status.value).toBe("completed"));
+
+		const args = spawnedArgs();
+		if (!args) {
+			throw new Error("Expected spawned args to be defined");
+		}
+		const inputFlagIndex = args.indexOf("-i");
+		expect(inputFlagIndex).toBeGreaterThan(-1);
+		expect(args[inputFlagIndex + 1]).toBe(
+			"/output/.retropacker_temp/unknown-bin.cue",
+		);
+		job.dispose();
 	});
 });
 
@@ -449,11 +546,12 @@ describe("ProcessJobUseCase tool selection", () => {
 		job.dispose();
 	});
 
-	it("uses DolphinTool for .rvz extension regardless of system", async () => {
+	it("uses DolphinTool for .rvz extension when override is provided", async () => {
 		const job = createJob("dolphin-ext", {
 			system: "Unknown",
 			path: "/roms/game.rvz",
 			filename: "game.rvz",
+			platformOverride: "gamecube",
 		});
 		const { executor, spawnedBinary } = createCapturingExecutor();
 
@@ -561,11 +659,126 @@ describe("ProcessJobUseCase arg building", () => {
 		await useCase.execute(job, "/output", "compress", settings);
 		await vi.waitFor(() => expect(job.status.value).toBe("completed"));
 
-		const args = spawnedArgs()!;
+		const args = spawnedArgs();
+		if (!args) {
+			throw new Error("Expected spawned args to be defined");
+		}
 		expect(args).toContain("createdvd"); // strategy
 		expect(args).toContain("-i");
 		expect(args).toContain("-o");
 		expect(args.indexOf("-c")).toBeGreaterThan(-1); // compression
+		job.dispose();
+	});
+
+	it("uses generated temp cue as input when compressing a naked .bin", async () => {
+		const job = createJob("bin-temp-cue", {
+			system: "PS1",
+			path: "/games/bin-temp-cue.bin",
+			filename: "bin-temp-cue.bin",
+		});
+		const { executor, spawnedArgs } = createCapturingExecutor();
+
+		const fileSystem: IFileSystemRepository = {
+			...baseFileSystem,
+			async exists(path) {
+				return path === "/games/bin-temp-cue.bin";
+			},
+			async readDirectory() {
+				return [{ name: "bin-temp-cue.bin", isFile: true, isDirectory: false }];
+			},
+		};
+
+		const useCase = new ProcessJobUseCase({
+			commandExecutor: executor,
+			notificationService: createNotificationServiceSpy().service,
+			fileSystem,
+		});
+
+		await useCase.execute(job, "/output", "compress", settings);
+		await vi.waitFor(() => expect(job.status.value).toBe("completed"));
+
+		const args = spawnedArgs();
+		if (!args) {
+			throw new Error("Expected spawned args to be defined");
+		}
+		const inputFlagIndex = args.indexOf("-i");
+		expect(inputFlagIndex).toBeGreaterThan(-1);
+		expect(args[inputFlagIndex + 1]).toBe(
+			"/output/.retropacker_temp/bin-temp-cue.cue",
+		);
+		job.dispose();
+	});
+});
+
+describe("ProcessJobUseCase cue preprocessing failures", () => {
+	it("fails early for multi-track bin input without cue", async () => {
+		const job = createJob("multitrack-missing-cue", {
+			system: "PS1",
+			path: "/games/Game (Track 1).bin",
+			filename: "Game (Track 1).bin",
+		});
+		const spawnFn = vi.fn();
+		const commandExecutor = new TestCommandExecutor(spawnFn);
+		const fileSystem: IFileSystemRepository = {
+			...baseFileSystem,
+			async exists(path) {
+				return path === "/games/Game (Track 1).bin";
+			},
+			async readDirectory() {
+				return [
+					{ name: "Game (Track 1).bin", isFile: true, isDirectory: false },
+					{ name: "Game (Track 2).bin", isFile: true, isDirectory: false },
+				];
+			},
+		};
+
+		const useCase = new ProcessJobUseCase({
+			commandExecutor,
+			notificationService: createNotificationServiceSpy().service,
+			fileSystem,
+		});
+
+		await useCase.execute(job, "/output", "compress", settings);
+
+		expect(spawnFn).not.toHaveBeenCalled();
+		expect(job.status.value).toBe("failed");
+		expect(job.errorMessage.value).toBe(
+			"Multi-track .bin detected without a .cue file. A valid .cue sheet is required.",
+		);
+		job.dispose();
+	});
+
+	it("fails early when cue references missing bin", async () => {
+		const job = createJob("missing-cue-bin", {
+			system: "PS1",
+			path: "/games/missing.cue",
+			filename: "missing.cue",
+		});
+		const spawnFn = vi.fn();
+		const commandExecutor = new TestCommandExecutor(spawnFn);
+		const fileSystem: IFileSystemRepository = {
+			...baseFileSystem,
+			async readText() {
+				return `FILE "missing.bin" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n`;
+			},
+			async exists() {
+				return false;
+			},
+		};
+
+		const useCase = new ProcessJobUseCase({
+			commandExecutor,
+			notificationService: createNotificationServiceSpy().service,
+			fileSystem,
+		});
+
+		await useCase.execute(job, "/output", "compress", settings);
+
+		expect(spawnFn).not.toHaveBeenCalled();
+		expect(job.status.value).toBe("failed");
+		expect(job.errorMessage.value).toBe(
+			"Referenced .bin file not found in directory.",
+		);
 		job.dispose();
 	});
 });

@@ -4,14 +4,14 @@
  * @module components/dashboard/JobTable
  */
 
-export { JobTable } from "./JobTable";
-export { JobRow } from "./JobRow";
 export { FolderRow } from "./FolderRow";
+export { JobRow } from "./JobRow";
+export { JobTable } from "./JobTable";
 export type { TreeNode } from "./JobTreeBuilder";
 export {
 	buildTree,
-	getAllPaths,
 	countItems,
-	findNode,
 	findCommonPrefix,
+	findNode,
+	getAllPaths,
 } from "./JobTreeBuilder";

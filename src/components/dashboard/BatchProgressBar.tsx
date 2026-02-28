@@ -7,12 +7,12 @@
  * @module components/dashboard/BatchProgressBar
  */
 
-import { useSignalValue } from "@/hooks/useSignalValue";
-import { jobStore } from "@/stores/JobStore";
-import type { WorkflowType } from "@/domain/types/workflow.types";
+import { AlertCircle, CheckCircle, Clock, Loader2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
-import { CheckCircle, Loader2, AlertCircle, Clock } from "lucide-react";
+import type { WorkflowType } from "@/domain/types/workflow.types";
+import { useSignalValue } from "@/hooks/useSignalValue";
 import { cn } from "@/lib/utils";
+import { jobStore } from "@/stores/JobStore";
 
 interface BatchProgressBarProps {
 	workflow: WorkflowType;
@@ -63,7 +63,8 @@ export function BatchProgressBar({ workflow }: BatchProgressBarProps) {
 
 	if (stats.total === 0) return null;
 
-	const { total, completed, processing, failed, pending, overallProgress } = stats;
+	const { total, completed, processing, failed, pending, overallProgress } =
+		stats;
 	const allDone = completed + failed === total;
 	const workflowHasCompressionStats = stats.jobsWithCompressionEstimate > 0;
 	const globalHasCompressionStats = globalStats.jobsWithCompressionEstimate > 0;
@@ -74,12 +75,13 @@ export function BatchProgressBar({ workflow }: BatchProgressBarProps) {
 	const workflowLabel = getWorkflowLabel(workflow);
 	const showDistinctGlobalStats =
 		globalHasCompressionStats &&
-		(globalStats.jobsWithCompressionEstimate !== stats.jobsWithCompressionEstimate ||
+		(globalStats.jobsWithCompressionEstimate !==
+			stats.jobsWithCompressionEstimate ||
 			Math.abs(globalStats.estimatedSavedBytes - stats.estimatedSavedBytes) >
-			1024 * 1024 ||
+				1024 * 1024 ||
 			Math.abs(
 				(globalStats.estimatedCompressionRatio ?? 0) -
-				(stats.estimatedCompressionRatio ?? 0),
+					(stats.estimatedCompressionRatio ?? 0),
 			) > 0.05);
 
 	return (

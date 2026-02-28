@@ -5,10 +5,10 @@
  * @module data/repositories/MockFileSystemRepository
  */
 
-import {
-	IFileSystemRepository,
-	FileInfo,
+import type {
 	DirectoryEntry,
+	FileInfo,
+	IFileSystemRepository,
 } from "../../domain/repositories/IFileSystemRepository";
 
 /**
@@ -104,6 +104,14 @@ export class MockFileSystemRepository implements IFileSystemRepository {
 	}
 
 	/**
+	 * Return empty string for mock.
+	 */
+	async readText(_path: string, _maxBytes?: number): Promise<string> {
+		console.log("[MOCK] readText called");
+		return "";
+	}
+
+	/**
 	 * No-op for mock.
 	 */
 	async removeDirectory(_path: string): Promise<void> {
@@ -114,6 +122,6 @@ export class MockFileSystemRepository implements IFileSystemRepository {
 	 * Return a mock hash.
 	 */
 	async computeFileHash(_path: string): Promise<string> {
-		return "mock_sha256_" + Math.random().toString(36).substring(2, 18);
+		return `mock_sha256_${Math.random().toString(36).substring(2, 18)}`;
 	}
 }

@@ -1,20 +1,18 @@
-import React, { createContext, useContext, useMemo, ReactNode } from "react";
-import { ICommandExecutor } from "../../domain/repositories/ICommandExecutor";
-import { IFileSystemRepository } from "../../domain/repositories/IFileSystemRepository";
-import { INotificationService } from "../../domain/repositories/INotificationService";
-import { IJobRepository } from "../../domain/repositories/IJobRepository";
-import { ISettingsRepository } from "../../domain/repositories/ISettingsRepository";
-
-import { TauriCommandExecutor } from "../../data/repositories/TauriCommandExecutor";
-import { TauriFileSystemRepository } from "../../data/repositories/TauriFileSystemRepository";
-import { TauriNotificationService } from "../../data/repositories/TauriNotificationService";
-
+import type React from "react";
+import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { MockCommandExecutor } from "../../data/repositories/MockCommandExecutor";
 import { MockFileSystemRepository } from "../../data/repositories/MockFileSystemRepository";
 import { MockNotificationService } from "../../data/repositories/MockNotificationService";
-
+import { TauriCommandExecutor } from "../../data/repositories/TauriCommandExecutor";
+import { TauriFileSystemRepository } from "../../data/repositories/TauriFileSystemRepository";
+import { TauriNotificationService } from "../../data/repositories/TauriNotificationService";
 import { ZustandJobRepository } from "../../data/repositories/ZustandJobRepository";
 import { ZustandSettingsRepository } from "../../data/repositories/ZustandSettingsRepository";
+import type { ICommandExecutor } from "../../domain/repositories/ICommandExecutor";
+import type { IFileSystemRepository } from "../../domain/repositories/IFileSystemRepository";
+import type { IJobRepository } from "../../domain/repositories/IJobRepository";
+import type { INotificationService } from "../../domain/repositories/INotificationService";
+import type { ISettingsRepository } from "../../domain/repositories/ISettingsRepository";
 
 import { ProcessRegistry } from "../../services/ProcessRegistry";
 

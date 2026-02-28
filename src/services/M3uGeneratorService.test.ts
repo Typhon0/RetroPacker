@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { M3uGeneratorService } from "./M3uGeneratorService";
 import type { IFileSystemRepository } from "@/domain/repositories/IFileSystemRepository";
+import { M3uGeneratorService } from "./M3uGeneratorService";
 
 // ── Helpers ──────────────────────────────────────────────────
 
@@ -45,6 +45,9 @@ function createMockFileSystem(
 		async readTextFile() {
 			return "";
 		},
+		async readText() {
+			return "";
+		},
 		async removeDirectory() {
 			return;
 		},
@@ -65,9 +68,9 @@ describe("M3uGeneratorService.groupByDisc", () => {
 		expect(groups.size).toBe(1);
 		const group = groups.get("MGS");
 		expect(group).toBeDefined();
-		expect(group!.entries).toHaveLength(2);
-		expect(group!.entries[0].discNumber).toBe(1);
-		expect(group!.entries[1].discNumber).toBe(2);
+		expect(group?.entries).toHaveLength(2);
+		expect(group?.entries[0].discNumber).toBe(1);
+		expect(group?.entries[1].discNumber).toBe(2);
 	});
 
 	it("groups [Disc N] bracket variants", () => {
@@ -92,7 +95,7 @@ describe("M3uGeneratorService.groupByDisc", () => {
 		];
 		const groups = M3uGeneratorService.groupByDisc(filenames);
 		expect(groups.size).toBe(1);
-		expect(groups.get("RPG")!.entries).toHaveLength(3);
+		expect(groups.get("RPG")?.entries).toHaveLength(3);
 	});
 
 	it("groups (Disk N) variants", () => {
@@ -118,8 +121,8 @@ describe("M3uGeneratorService.groupByDisc", () => {
 		];
 		const groups = M3uGeneratorService.groupByDisc(filenames);
 		expect(groups.size).toBe(2);
-		expect(groups.get("MGS")!.entries).toHaveLength(2);
-		expect(groups.get("FF7")!.entries).toHaveLength(3);
+		expect(groups.get("MGS")?.entries).toHaveLength(2);
+		expect(groups.get("FF7")?.entries).toHaveLength(3);
 	});
 
 	it("sorts entries by disc number", () => {
@@ -129,7 +132,7 @@ describe("M3uGeneratorService.groupByDisc", () => {
 			"Game (Disc 2).chd",
 		];
 		const groups = M3uGeneratorService.groupByDisc(filenames);
-		const entries = groups.get("Game")!.entries;
+		const entries = groups.get("Game")?.entries;
 		expect(entries[0].discNumber).toBe(1);
 		expect(entries[1].discNumber).toBe(2);
 		expect(entries[2].discNumber).toBe(3);

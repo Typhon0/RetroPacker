@@ -24,7 +24,7 @@ export class BinaryManagerService {
 		binary: "chdman" | "dolphintool",
 		args: string[],
 	): Promise<string> {
-		const cmd = this.createCommand(binary, args);
+		const cmd = BinaryManagerService.createCommand(binary, args);
 		const output = await cmd.execute();
 
 		if (output.code !== 0) {
@@ -41,7 +41,7 @@ export class BinaryManagerService {
 	static async checkBinaryExists(): Promise<boolean> {
 		try {
 			// Simple check: run --help for both
-			await this.execute("chdman", ["--help"]);
+			await BinaryManagerService.execute("chdman", ["--help"]);
 			return true;
 		} catch (e) {
 			console.error("Failed to execute sidecar:", e);

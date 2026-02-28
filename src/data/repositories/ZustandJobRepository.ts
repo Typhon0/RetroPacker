@@ -1,5 +1,5 @@
-import type { IJobRepository } from "../../domain/repositories/IJobRepository";
 import type { JobProps, JobUpdate } from "../../domain/entities/Job";
+import type { IJobRepository } from "../../domain/repositories/IJobRepository";
 import type { WorkflowType } from "../../domain/types/workflow.types";
 import { jobStore } from "../../stores/JobStore";
 

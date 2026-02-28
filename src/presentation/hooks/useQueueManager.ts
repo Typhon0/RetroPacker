@@ -1,28 +1,43 @@
 import { useCallback, useMemo } from "react";
-import { useRepositories } from "../context/RepositoryContext";
+import type { WorkflowType } from "../../domain/types/workflow.types";
+import { DetectSystemUseCase } from "../../domain/usecases/DetectSystemUseCase";
 import {
 	ManageQueueUseCase,
-	WorkflowFileConfig,
+	type QueueAddProgress,
+	type QueueAddProgressCallback,
+	type QueueAddResult,
 	WORKFLOW_FILE_CONFIGS,
+	type WorkflowFileConfig,
 } from "../../domain/usecases/ManageQueueUseCase";
-import { DetectSystemUseCase } from "../../domain/usecases/DetectSystemUseCase";
-import { WorkflowType } from "../../domain/types/workflow.types";
+import { useRepositories } from "../context/RepositoryContext";
 
 export interface QueueManager {
-	addFile: (filePath: string, filename: string, size: number) => Promise<void>;
-	addFiles: (paths: string[]) => Promise<void>;
-	addFolders: (folderPaths: string[]) => Promise<void>;
+	addFile: (
+		filePath: string,
+		filename: string,
+		size: number,
+	) => Promise<QueueAddResult>;
+	addFiles: (
+		paths: string[],
+		onProgress?: QueueAddProgressCallback,
+	) => Promise<QueueAddResult[]>;
+	addFolders: (
+		folderPaths: string[],
+		onProgress?: QueueAddProgressCallback,
+	) => Promise<QueueAddResult[]>;
 	removeJob: (jobId: string) => void;
 	clearQueue: () => void;
 	assignDiscGroups: () => void;
 	fileConfig: WorkflowFileConfig;
 }
+
+export type { QueueAddProgress };
 export function useQueueManager(workflow: WorkflowType): QueueManager {
-	const { jobRepository, fileSystem } = useRepositories();
+	const { jobRepository, fileSystem, commandExecutor } = useRepositories();
 
 	const detectSystem = useMemo(
-		() => new DetectSystemUseCase({ fileSystem }),
-		[fileSystem],
+		() => new DetectSystemUseCase({ fileSystem, commandExecutor }),
+		[fileSystem, commandExecutor],
 	);
 
 	const manageQueue = useMemo(
@@ -36,22 +51,32 @@ export function useQueueManager(workflow: WorkflowType): QueueManager {
 	);
 
 	const addFile = useCallback(
-		async (filePath: string, filename: string, size: number): Promise<void> => {
-			await manageQueue.addFile(workflow, filePath, filename, size);
+		async (
+			filePath: string,
+			filename: string,
+			size: number,
+		): Promise<QueueAddResult> => {
+			return manageQueue.addFile(workflow, filePath, filename, size);
 		},
 		[manageQueue, workflow],
 	);
 
 	const addFiles = useCallback(
-		async (paths: string[]): Promise<void> => {
-			await manageQueue.addFiles(workflow, paths);
+		async (
+			paths: string[],
+			onProgress?: QueueAddProgressCallback,
+		): Promise<QueueAddResult[]> => {
+			return manageQueue.addFiles(workflow, paths, onProgress);
 		},
 		[manageQueue, workflow],
 	);
 
 	const addFolders = useCallback(
-		async (folderPaths: string[]): Promise<void> => {
-			await manageQueue.addFolders(workflow, folderPaths);
+		async (
+			folderPaths: string[],
+			onProgress?: QueueAddProgressCallback,
+		): Promise<QueueAddResult[]> => {
+			return manageQueue.addFolders(workflow, folderPaths, onProgress);
 		},
 		[manageQueue, workflow],
 	);

@@ -7,7 +7,10 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { usePackerStore, CompressionPreset } from "@/stores/usePackerStore";
+import {
+	type CompressionPreset,
+	usePackerStore,
+} from "@/stores/usePackerStore";
 
 export function PresetSelector() {
 	const { preset, setPreset } = usePackerStore();
@@ -15,9 +18,9 @@ export function PresetSelector() {
 	return (
 		<div className="flex items-center gap-4">
 			<div className="grid gap-1.5">
-				<label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+				<p className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
 					Compression Preset
-				</label>
+				</p>
 				<Select
 					value={preset}
 					onValueChange={(val) => setPreset(val as CompressionPreset)}

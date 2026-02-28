@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest";
 import { JobState } from "@/domain/entities/JobState";
 import { planQueueDispatch } from "@/hooks/useQueueProcessor";
 
-function createJob(id: string, status: "pending" | "processing" | "completed" | "failed"): JobState {
+function createJob(
+	id: string,
+	status: "pending" | "processing" | "completed" | "failed",
+	system = "PS2",
+): JobState {
 	return new JobState("compress", {
 		id,
 		filename: `${id}.iso`,
 		path: `/games/${id}.iso`,
-		system: "PS2",
+		system,
 		status,
 		progress: status === "completed" ? 100 : 0,
 		originalSize: 1024,
@@ -108,5 +112,22 @@ describe("planQueueDispatch", () => {
 		expect(plan.shouldAutoPause).toBe(false);
 
 		pending.dispose();
+	});
+
+	it("auto-pauses when only unknown pending jobs remain", () => {
+		const unknownPending = createJob("unknown-pending", "pending", "Unknown");
+
+		const plan = planQueueDispatch({
+			queue: [unknownPending],
+			startRequests: [],
+			isProcessing: true,
+			concurrency: 1,
+		});
+
+		expect(plan.nextJob).toBeUndefined();
+		expect(plan.canDispatch).toBe(false);
+		expect(plan.shouldAutoPause).toBe(true);
+
+		unknownPending.dispose();
 	});
 });

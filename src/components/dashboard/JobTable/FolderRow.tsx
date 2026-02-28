@@ -2,8 +2,16 @@
  * Renders a folder row with expand/collapse and platform override controls.
  */
 
+import {
+	ChevronDown,
+	ChevronRight,
+	Folder,
+	FolderOpen,
+	Play,
+	Trash2,
+	XCircle,
+} from "lucide-react";
 import React from "react";
-import { TableRow, TableCell } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 
 import {
@@ -13,15 +21,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import {
-	ChevronRight,
-	ChevronDown,
-	Folder,
-	Play,
-	XCircle,
-	Trash2,
-	FolderOpen,
-} from "lucide-react";
+import { TableCell, TableRow } from "@/components/ui/table";
 import type { Platform } from "@/domain/types/platform.types";
 import type { TreeNode } from "./JobTreeBuilder";
 
@@ -90,9 +90,7 @@ function FolderRowComponent({
 					<Select
 						value={currentValue}
 						onValueChange={(val) => {
-							onSetPlatform(
-								val === "auto" ? undefined : (val as Platform),
-							);
+							onSetPlatform(val === "auto" ? undefined : (val as Platform));
 						}}
 					>
 						<SelectTrigger

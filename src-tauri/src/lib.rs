@@ -3,6 +3,22 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use tauri::ipc::Response;
 
+const DEFAULT_READ_BYTES: usize = 2048;
+const MAX_READ_BYTES: usize = 65536;
+
+fn resolve_read_len(requested: Option<usize>) -> Result<usize, String> {
+    let read_len = requested.unwrap_or(DEFAULT_READ_BYTES);
+    if read_len == 0 {
+        return Ok(DEFAULT_READ_BYTES);
+    }
+    if read_len > MAX_READ_BYTES {
+        return Err(format!(
+            "Requested read size {read_len} exceeds max supported size {MAX_READ_BYTES}"
+        ));
+    }
+    Ok(read_len)
+}
+
 /// Read a range of bytes from a file.
 /// Returns raw bytes via IPC Response for zero-copy transfer.
 #[tauri::command]
@@ -14,7 +30,7 @@ fn read_file_bytes(path: String, offset: Option<u64>, length: Option<usize>) -> 
             .map_err(|e| format!("Failed to seek: {e}"))?;
     }
 
-    let read_len = length.unwrap_or(2048);
+    let read_len = resolve_read_len(length)?;
     let mut buffer = vec![0u8; read_len];
     let bytes_read = file
         .read(&mut buffer)
@@ -22,6 +38,21 @@ fn read_file_bytes(path: String, offset: Option<u64>, length: Option<usize>) -> 
 
     buffer.truncate(bytes_read);
     Ok(Response::new(buffer))
+}
+
+/// Read a UTF-8 (lossy) text segment from a file.
+/// Useful for small descriptor files (.cue/.gdi) without loading full files.
+#[tauri::command]
+fn read_file_text(path: String, max_bytes: Option<usize>) -> Result<String, String> {
+    let mut file = File::open(&path).map_err(|e| format!("Failed to open file: {e}"))?;
+    let read_len = resolve_read_len(max_bytes)?;
+    let mut buffer = vec![0u8; read_len];
+    let bytes_read = file
+        .read(&mut buffer)
+        .map_err(|e| format!("Failed to read: {e}"))?;
+    buffer.truncate(bytes_read);
+
+    Ok(String::from_utf8_lossy(&buffer).to_string())
 }
 
 /// Compute the SHA-256 hash of a file, streaming in 8KB chunks.
@@ -56,7 +87,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![read_file_bytes, compute_file_hash])
+        .invoke_handler(tauri::generate_handler![
+            read_file_bytes,
+            read_file_text,
+            compute_file_hash
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

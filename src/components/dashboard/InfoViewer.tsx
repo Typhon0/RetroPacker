@@ -1,24 +1,24 @@
-import { useState, useCallback } from "react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openFile, stat } from "@tauri-apps/plugin-fs";
 import {
-	FileIcon,
-	InfoIcon,
-	Loader2,
-	Image as ImageIcon,
-	HardDrive,
-	Percent,
-	FileArchive,
-	Fingerprint,
 	ChevronDown,
 	ChevronUp,
+	FileArchive,
+	FileIcon,
+	Fingerprint,
+	HardDrive,
+	Image as ImageIcon,
+	InfoIcon,
+	Loader2,
+	Percent,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { MetadataService } from "@/services/MetadataService";
-import { GameIdExtractor } from "@/services/GameIdExtractor";
-import { CoverArtService } from "@/services/CoverArtService";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BinaryManagerService } from "@/services/BinaryManagerService";
-import { stat, open as openFile } from "@tauri-apps/plugin-fs";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { CoverArtService } from "@/services/CoverArtService";
+import { GameIdExtractor } from "@/services/GameIdExtractor";
+import { MetadataService } from "@/services/MetadataService";
 
 interface GameInfo {
 	filename: string;
@@ -145,7 +145,7 @@ export function InfoViewer() {
 
 			try {
 				// Get file name and size if not provided
-				const name = fileName || filePath.split(/[\\\/]/).pop() || "unknown";
+				const name = fileName || filePath.split(/[\\/]/).pop() || "unknown";
 				let size = fileSize || 0;
 
 				if (!fileSize) {
@@ -323,11 +323,11 @@ export function InfoViewer() {
 
 	const processFile = useCallback(
 		async (file: File) => {
-			// @ts-ignore - file.path exists in Tauri
+			// @ts-expect-error - file.path exists in Tauri
 			let filePath = file.path;
 
 			if (!filePath) {
-				// @ts-ignore
+				// @ts-expect-error
 				const isTauri =
 					typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 				if (!isTauri) {
@@ -417,10 +417,11 @@ export function InfoViewer() {
 				className={`
                     border-2 border-dashed rounded-lg p-8 text-center cursor-pointer
                     transition-colors duration-200
-                    ${isDragging
-						? "border-primary bg-primary/10"
-						: "border-muted-foreground/25 hover:border-muted-foreground/50 bg-muted/5"
-					}
+                    ${
+											isDragging
+												? "border-primary bg-primary/10"
+												: "border-muted-foreground/25 hover:border-muted-foreground/50 bg-muted/5"
+										}
                 `}
 			>
 				<div className="flex flex-col items-center gap-2 text-muted-foreground">
@@ -475,6 +476,12 @@ export function InfoViewer() {
 							</CardTitle>
 						</CardHeader>
 						<CardContent className="space-y-6">
+							{gameInfo.system === "Unknown" && (
+								<div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-600">
+									Platform Unknown. Select a platform manually before processing
+									this file in queue workflows.
+								</div>
+							)}
 							<div className="flex flex-col md:flex-row gap-6">
 								{/* Cover Art Column */}
 								<div className="flex-shrink-0 mx-auto md:mx-0">
@@ -594,16 +601,16 @@ export function InfoViewer() {
 												)}
 												{(gameInfo.dolphinStats.region ||
 													gameInfo.dolphinStats.country) && (
-														<div>
-															<span className="text-xs text-muted-foreground block mb-1">
-																Region
-															</span>
-															<span className="text-xs font-medium">
-																{gameInfo.dolphinStats.region} (
-																{gameInfo.dolphinStats.country})
-															</span>
-														</div>
-													)}
+													<div>
+														<span className="text-xs text-muted-foreground block mb-1">
+															Region
+														</span>
+														<span className="text-xs font-medium">
+															{gameInfo.dolphinStats.region} (
+															{gameInfo.dolphinStats.country})
+														</span>
+													</div>
+												)}
 												{gameInfo.dolphinStats.revision && (
 													<div>
 														<span className="text-xs text-muted-foreground block mb-1">
@@ -664,12 +671,13 @@ export function InfoViewer() {
 													<span className="text-xs font-mono text-muted-foreground">
 														{gameInfo.chdStats.logicalSize?.includes("bytes")
 															? formatFileSize(
-																parseInt(
-																	gameInfo.chdStats.logicalSize
-																		.replace(/,/g, "")
-																		.split(" ")[0],
-																),
-															)
+																	parseInt(
+																		gameInfo.chdStats.logicalSize
+																			.replace(/,/g, "")
+																			.split(" ")[0],
+																		10,
+																	),
+																)
 															: gameInfo.chdStats.logicalSize}
 													</span>
 												</div>
@@ -680,12 +688,13 @@ export function InfoViewer() {
 													<span className="text-xs font-mono text-muted-foreground">
 														{gameInfo.chdStats.chdSize?.includes("bytes")
 															? formatFileSize(
-																parseInt(
-																	gameInfo.chdStats.chdSize
-																		.replace(/,/g, "")
-																		.split(" ")[0],
-																),
-															)
+																	parseInt(
+																		gameInfo.chdStats.chdSize
+																			.replace(/,/g, "")
+																			.split(" ")[0],
+																		10,
+																	),
+																)
 															: gameInfo.chdStats.chdSize}
 													</span>
 												</div>

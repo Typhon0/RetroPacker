@@ -5,7 +5,7 @@
  * @module data/repositories/MockNotificationService
  */
 
-import {
+import type {
 	INotificationService,
 	NotificationOptions,
 } from "../../domain/repositories/INotificationService";

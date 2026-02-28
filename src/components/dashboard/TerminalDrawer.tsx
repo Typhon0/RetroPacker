@@ -1,10 +1,10 @@
 import { signal } from "@preact/signals-core";
+import { Terminal, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { JobState } from "@/domain/entities/JobState";
-import { cn } from "@/lib/utils";
-import { X, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { JobState } from "@/domain/entities/JobState";
 import { useSignalValue } from "@/hooks/useSignalValue";
+import { cn } from "@/lib/utils";
 
 interface TerminalDrawerProps {
 	job?: JobState;
@@ -47,7 +47,13 @@ export function TerminalDrawer({ job, isOpen, onClose }: TerminalDrawerProps) {
 	}, [scrollTop, totalLines, viewportHeight]);
 
 	const visibleLines = useMemo(
-		() => outputLog.slice(visibleWindow.start, visibleWindow.end),
+		() =>
+			outputLog
+				.slice(visibleWindow.start, visibleWindow.end)
+				.map((line, offset) => ({
+					id: `${visibleWindow.start + offset}:${line}`,
+					text: line,
+				})),
 		[outputLog, visibleWindow.end, visibleWindow.start],
 	);
 
@@ -93,7 +99,7 @@ export function TerminalDrawer({ job, isOpen, onClose }: TerminalDrawerProps) {
 		element.scrollTop = element.scrollHeight;
 		setScrollTop(element.scrollTop);
 		updateBottomStickiness();
-	}, [isOpen, selectedJobId, outputLog, updateBottomStickiness]);
+	}, [isOpen, selectedJobId, updateBottomStickiness]);
 
 	return (
 		<div
@@ -137,12 +143,12 @@ export function TerminalDrawer({ job, isOpen, onClose }: TerminalDrawerProps) {
 									transform: `translateY(${visibleWindow.offsetY}px)`,
 								}}
 							>
-								{visibleLines.map((line, i) => (
+								{visibleLines.map((line) => (
 									<div
-										key={visibleWindow.start + i}
+										key={line.id}
 										className="h-[18px] leading-[18px] whitespace-pre"
 									>
-										{line}
+										{line.text}
 									</div>
 								))}
 							</div>

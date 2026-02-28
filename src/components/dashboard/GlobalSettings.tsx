@@ -1,3 +1,5 @@
+import { open } from "@tauri-apps/plugin-dialog";
+import { FolderOpen, Settings, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -7,10 +9,6 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "@/components/ui/dialog";
-
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Settings, FolderOpen, X } from "lucide-react";
-import { usePackerStore } from "@/stores/usePackerStore";
 import {
 	Select,
 	SelectContent,
@@ -18,7 +16,8 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { open } from "@tauri-apps/plugin-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { usePackerStore } from "@/stores/usePackerStore";
 
 export function GlobalSettings() {
 	const {
@@ -107,9 +106,12 @@ export function GlobalSettings() {
 								{/* Output Directory */}
 								<div className="p-2 hover:bg-muted/50 rounded-md transition-colors">
 									<div className="flex flex-col gap-1">
-										<span className="text-sm font-medium">Output directory</span>
+										<span className="text-sm font-medium">
+											Output directory
+										</span>
 										<span className="text-xs text-muted-foreground">
-											Where processed files are saved. Leave empty to use the source file&apos;s folder.
+											Where processed files are saved. Leave empty to use the
+											source file&apos;s folder.
 										</span>
 										<div className="flex items-center gap-2 mt-1">
 											<button
@@ -164,10 +166,14 @@ export function GlobalSettings() {
 								>
 									{preset === "custom" && (
 										<div className="grid gap-2 pb-4 border-b">
-											<label className="text-sm font-medium">
+											<label
+												htmlFor="custom-codecs-input"
+												className="text-sm font-medium"
+											>
 												Custom Codecs
 											</label>
 											<input
+												id="custom-codecs-input"
 												className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
 												value={customCompression}
 												onChange={(e) => setCustomCompression(e.target.value)}
@@ -180,14 +186,20 @@ export function GlobalSettings() {
 									)}
 
 									<div className="grid gap-2">
-										<label className="text-sm font-medium">Hunk Size</label>
+										<label
+											htmlFor="hunk-size-input"
+											className="text-sm font-medium"
+										>
+											Hunk Size
+										</label>
 										<input
+											id="hunk-size-input"
 											type="number"
 											className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
 											value={chd.hunkSize || ""}
 											onChange={(e) => {
 												const val = e.target.value
-													? parseInt(e.target.value)
+													? parseInt(e.target.value, 10)
 													: undefined;
 												setChdSetting("hunkSize", val);
 											}}
@@ -198,7 +210,7 @@ export function GlobalSettings() {
 										</span>
 									</div>
 									<div className="grid gap-2">
-										<label className="text-sm font-medium">Media Type</label>
+										<span className="text-sm font-medium">Media Type</span>
 										<Select
 											value={chd.mediaType}
 											onValueChange={(val) =>
@@ -225,7 +237,7 @@ export function GlobalSettings() {
 									className="space-y-4 animate-in fade-in-50"
 								>
 									<div className="grid gap-2">
-										<label className="text-sm font-medium">Output Format</label>
+										<span className="text-sm font-medium">Output Format</span>
 										<Select
 											value={dolphin.format}
 											onValueChange={(val) =>
@@ -248,11 +260,11 @@ export function GlobalSettings() {
 										</Select>
 									</div>
 									<div className="grid gap-2">
-										<label className="text-sm font-medium">Block Size</label>
+										<span className="text-sm font-medium">Block Size</span>
 										<Select
 											value={dolphin.blockSize.toString()}
 											onValueChange={(val) =>
-												setDolphinSetting("blockSize", parseInt(val))
+												setDolphinSetting("blockSize", parseInt(val, 10))
 											}
 										>
 											<SelectTrigger className="h-8 w-full">

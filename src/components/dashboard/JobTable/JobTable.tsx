@@ -4,6 +4,8 @@
  * @module components/dashboard/JobTable/JobTable
  */
 
+import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { ChevronsUpDown, Filter } from "lucide-react";
 import {
 	type ReactNode,
 	useCallback,
@@ -12,16 +14,6 @@ import {
 	useRef,
 	useState,
 } from "react";
-import {
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "@/components/ui/table";
-import { ChevronsUpDown, Filter } from "lucide-react";
-import { revealItemInDir, openPath } from "@tauri-apps/plugin-opener";
 import { Button } from "@/components/ui/button";
 import {
 	Select,
@@ -30,17 +22,25 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { ProcessRegistry } from "@/services/ProcessRegistry";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@/components/ui/table";
 import type { JobState } from "@/domain/entities/JobState";
 import type { Platform } from "@/domain/types/platform.types";
 import type { WorkflowType } from "@/domain/types/workflow.types";
-import { jobStore } from "@/stores/JobStore";
 import { useSignalValue } from "@/hooks/useSignalValue";
-
-import type { TreeJob, TreeNode } from "./JobTreeBuilder";
-import { buildTree, findNode, getAllPaths } from "./JobTreeBuilder";
+import { buildCueBinLinkMap } from "@/lib/cueBinLinking";
+import { ProcessRegistry } from "@/services/ProcessRegistry";
+import { jobStore } from "@/stores/JobStore";
 import { FolderRow } from "./FolderRow";
 import { JobRow } from "./JobRow";
+import type { TreeJob, TreeNode } from "./JobTreeBuilder";
+import { buildTree, findNode, getAllPaths } from "./JobTreeBuilder";
 
 interface JobTableProps {
 	workflow: WorkflowType;
@@ -80,6 +80,8 @@ interface FlatJobRow {
 	job: JobState;
 	depth: number;
 	folderOverride?: Platform;
+	isCueBinLinked: boolean;
+	linkedCompanionLabel?: string;
 	height: number;
 }
 
@@ -90,7 +92,10 @@ const FOLDER_ROW_HEIGHT_PX = 44;
 const VIRTUAL_OVERSCAN_ROWS = 10;
 const VIRTUALIZE_AFTER_ROWS = 120;
 
-function findRowIndexByOffset(offset: number, cumulativeHeights: readonly number[]): number {
+function findRowIndexByOffset(
+	offset: number,
+	cumulativeHeights: readonly number[],
+): number {
 	const rowCount = cumulativeHeights.length - 1;
 	if (rowCount <= 0) return 0;
 	if (offset <= 0) return 0;
@@ -113,12 +118,15 @@ function findRowIndexByOffset(offset: number, cumulativeHeights: readonly number
 	return low;
 }
 
-export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps) {
+export function JobTable({
+	workflow,
+	onSelectJob,
+	selectedJobId,
+}: JobTableProps) {
 	const queue = useSignalValue(jobStore.queues[workflow]);
-	const jobRuntimeById = useSignalValue(jobStore.runtimeByWorkflow[workflow]) as Record<
-		string,
-		JobRuntimeSnapshot
-	>;
+	const jobRuntimeById = useSignalValue(
+		jobStore.runtimeByWorkflow[workflow],
+	) as Record<string, JobRuntimeSnapshot>;
 
 	const jobsById = useMemo(() => {
 		const map = new Map<string, JobState>();
@@ -127,6 +135,18 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 		}
 		return map;
 	}, [queue]);
+
+	const linkedCueBinPairs = useMemo(() => {
+		return buildCueBinLinkMap(
+			queue.map((job) => ({
+				id: job.id,
+				path: job.path,
+				filename: job.filename,
+				system: jobRuntimeById[job.id]?.system,
+				platformOverride: jobRuntimeById[job.id]?.platformOverride,
+			})),
+		);
+	}, [jobRuntimeById, queue]);
 
 	const treeJobs = useMemo((): TreeJob[] => {
 		return queue.map((job) => ({ id: job.id, path: job.path }));
@@ -161,19 +181,26 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 
 	const handleRemoveJobById = useCallback(
 		async (jobId: string) => {
-			const job = jobStore.getJob(workflow, jobId);
-			if (!job) return;
+			const pair = linkedCueBinPairs.byAnyJobId.get(jobId);
+			const targetIds = pair
+				? [pair.primaryJobId, ...pair.companionJobIds]
+				: [jobId];
 
-			if (job.status.value === "processing") {
-				try {
-					await ProcessRegistry.cancel(workflow, job.id);
-				} catch (e) {
-					console.warn("Failed to cancel job process", e);
+			for (const targetId of targetIds) {
+				const job = jobStore.getJob(workflow, targetId);
+				if (!job) continue;
+
+				if (job.status.value === "processing") {
+					try {
+						await ProcessRegistry.cancel(workflow, job.id);
+					} catch (e) {
+						console.warn("Failed to cancel job process", e);
+					}
 				}
+				jobStore.removeJob(workflow, job.id);
 			}
-			jobStore.removeJob(workflow, job.id);
 		},
-		[workflow],
+		[linkedCueBinPairs.byAnyJobId, workflow],
 	);
 
 	const handleSelectJobById = useCallback(
@@ -186,21 +213,27 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 
 	const handleUpdatePlatformById = useCallback(
 		(jobId: string, platform: Platform | undefined) => {
-			jobStore.updateJob(workflow, jobId, {
-				platformOverride: platform,
-				system: platform
-					? platform.charAt(0).toUpperCase() + platform.slice(1)
-					: undefined,
-			});
+			const pair = linkedCueBinPairs.byAnyJobId.get(jobId);
+			const targetIds = pair
+				? [pair.primaryJobId, ...pair.companionJobIds]
+				: [jobId];
+
+			for (const targetId of targetIds) {
+				jobStore.updateJob(workflow, targetId, {
+					platformOverride: platform,
+				});
+			}
 		},
-		[workflow],
+		[linkedCueBinPairs.byAnyJobId, workflow],
 	);
 
 	const handleOpenJobLocationById = useCallback(
 		(jobId: string) => {
 			const job = jobStore.getJob(workflow, jobId);
 			if (!job) return;
-			revealItemInDir(job.path).catch((e) => console.warn("Failed to reveal location", e));
+			revealItemInDir(job.path).catch((e) =>
+				console.warn("Failed to reveal location", e),
+			);
 		},
 		[workflow],
 	);
@@ -233,6 +266,9 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 			const collectPendingInNode = (targetNode: TreeNode) => {
 				for (const treeJob of targetNode.jobs) {
 					if (!filteredJobIds.has(treeJob.id)) {
+						continue;
+					}
+					if (linkedCueBinPairs.hiddenCompanionJobIds.has(treeJob.id)) {
 						continue;
 					}
 
@@ -268,7 +304,12 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 				jobStore.requestStart(workflow, jobId);
 			}
 		},
-		[filteredJobIds, jobRuntimeById, workflow],
+		[
+			filteredJobIds,
+			jobRuntimeById,
+			linkedCueBinPairs.hiddenCompanionJobIds,
+			workflow,
+		],
 	);
 
 	const uniqueSystems = useMemo(() => {
@@ -284,7 +325,11 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 		const visibility = new Map<string, boolean>();
 
 		const visit = (node: TreeNode): boolean => {
-			let hasVisibleJobs = node.jobs.some((job) => filteredJobIds.has(job.id));
+			let hasVisibleJobs = node.jobs.some(
+				(job) =>
+					filteredJobIds.has(job.id) &&
+					!linkedCueBinPairs.hiddenCompanionJobIds.has(job.id),
+			);
 
 			for (const child of Object.values(node.children)) {
 				if (visit(child)) {
@@ -298,7 +343,7 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 
 		visit(tree);
 		return visibility;
-	}, [filteredJobIds, tree]);
+	}, [filteredJobIds, linkedCueBinPairs.hiddenCompanionJobIds, tree]);
 
 	const folderStatsByPath = useMemo(() => {
 		const stats = new Map<string, FolderStats>();
@@ -340,6 +385,9 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 
 			for (const treeJob of node.jobs) {
 				if (!filteredJobIds.has(treeJob.id)) {
+					continue;
+				}
+				if (linkedCueBinPairs.hiddenCompanionJobIds.has(treeJob.id)) {
 					continue;
 				}
 
@@ -386,7 +434,12 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 
 		visit(tree);
 		return stats;
-	}, [filteredJobIds, jobRuntimeById, tree]);
+	}, [
+		filteredJobIds,
+		jobRuntimeById,
+		linkedCueBinPairs.hiddenCompanionJobIds,
+		tree,
+	]);
 
 	const topLevelFolders = useMemo(() => {
 		if (!tree.path) {
@@ -395,7 +448,9 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 		return [tree];
 	}, [tree]);
 
-	const [expandedPaths, setExpandedPaths] = useState<Record<string, boolean>>({});
+	const [expandedPaths, setExpandedPaths] = useState<Record<string, boolean>>(
+		{},
+	);
 	const [folderOverrides, setFolderOverrides] = useState<
 		Record<string, Platform | undefined>
 	>({});
@@ -412,7 +467,9 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 
 					const runtime = jobRuntimeById[job.id];
 					if (runtime?.status === "pending") {
-						jobStore.updateJob(workflow, job.id, { platformOverride: platform });
+						jobStore.updateJob(workflow, job.id, {
+							platformOverride: platform,
+						});
 					}
 				});
 				Object.values(node.children).forEach(applyToNode);
@@ -429,7 +486,7 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 			const normalizedJobPath = jobPath.replace(/\\/g, "/");
 			for (const [folderPath, override] of Object.entries(folderOverrides)) {
 				if (
-					normalizedJobPath.startsWith(folderPath.replace(/\\/g, "/") + "/")
+					normalizedJobPath.startsWith(`${folderPath.replace(/\\/g, "/")}/`)
 				) {
 					return override;
 				}
@@ -543,9 +600,13 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 					if (!filteredJobIds.has(treeJob.id)) {
 						continue;
 					}
+					if (linkedCueBinPairs.hiddenCompanionJobIds.has(treeJob.id)) {
+						continue;
+					}
 
 					const job = jobsById.get(treeJob.id);
 					if (!job) continue;
+					const linkedPair = linkedCueBinPairs.byPrimary.get(job.id);
 
 					const jobDepth = node.path ? depth + 1 : depth;
 					result.push({
@@ -554,6 +615,12 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 						job,
 						depth: jobDepth,
 						folderOverride: getFolderOverrideForJob(job.path),
+						isCueBinLinked: !!linkedPair,
+						linkedCompanionLabel: linkedPair
+							? linkedPair.companionFilenames.length > 1
+								? `${linkedPair.companionFilenames[0]} +${linkedPair.companionFilenames.length - 1}`
+								: linkedPair.companionFilename
+							: undefined,
 						height: JOB_ROW_HEIGHT_PX,
 					});
 				}
@@ -570,6 +637,8 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 		folderStatsByPath,
 		getFolderOverrideForJob,
 		jobsById,
+		linkedCueBinPairs.byPrimary,
+		linkedCueBinPairs.hiddenCompanionJobIds,
 		visibleNodeByPath,
 	]);
 
@@ -635,7 +704,10 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 
 		const totalHeight = cumulativeHeights[cumulativeHeights.length - 1];
 		const topSpacerHeight = cumulativeHeights[startIndex];
-		const bottomSpacerHeight = Math.max(0, totalHeight - cumulativeHeights[endIndex]);
+		const bottomSpacerHeight = Math.max(
+			0,
+			totalHeight - cumulativeHeights[endIndex],
+		);
 
 		return {
 			startIndex,
@@ -643,12 +715,23 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 			topSpacerHeight,
 			bottomSpacerHeight,
 		};
-	}, [shouldVirtualize, rows.length, scrollTop, viewportHeight, cumulativeHeights]);
+	}, [
+		shouldVirtualize,
+		rows.length,
+		scrollTop,
+		viewportHeight,
+		cumulativeHeights,
+	]);
 
 	const visibleRows = useMemo(() => {
 		if (!shouldVirtualize) return rows;
 		return rows.slice(virtualWindow.startIndex, virtualWindow.endIndex);
-	}, [rows, shouldVirtualize, virtualWindow.endIndex, virtualWindow.startIndex]);
+	}, [
+		rows,
+		shouldVirtualize,
+		virtualWindow.endIndex,
+		virtualWindow.startIndex,
+	]);
 
 	const renderSpacer = (key: string, height: number): ReactNode => {
 		if (height <= 0) return null;
@@ -774,7 +857,9 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 													setFolderPlatform(row.node.path, platform)
 												}
 												onRemove={() => handleRemoveFolder(row.node)}
-												onOpenLocation={() => handleOpenFolderLocation(row.node.path)}
+												onOpenLocation={() =>
+													handleOpenFolderLocation(row.node.path)
+												}
 											/>
 										);
 									}
@@ -786,6 +871,8 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 											depth={row.depth}
 											isSelected={selectedJobId === row.job.id}
 											folderOverride={row.folderOverride}
+											isCueBinLinked={row.isCueBinLinked}
+											linkedCompanionFilename={row.linkedCompanionLabel}
 											onSelect={handleSelectJobById}
 											onStart={handleStartJobById}
 											onRemove={handleRemoveJobById}
@@ -795,7 +882,10 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 									);
 								})}
 								{shouldVirtualize &&
-									renderSpacer("bottom-spacer", virtualWindow.bottomSpacerHeight)}
+									renderSpacer(
+										"bottom-spacer",
+										virtualWindow.bottomSpacerHeight,
+									)}
 							</>
 						)}
 					</TableBody>

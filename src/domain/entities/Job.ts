@@ -1,9 +1,9 @@
+import type { Platform } from "../types/platform.types";
 import type {
-	JobStatus,
 	CompressionStrategy,
+	JobStatus,
 	VerificationResult,
 } from "../types/workflow.types";
-import type { Platform } from "../types/platform.types";
 
 /**
  * Properties representing a Job entity.
@@ -52,4 +52,3 @@ export interface CreateJobProps {
  * Job update properties (partial).
  */
 export type JobUpdate = Partial<Omit<JobProps, "id" | "filename" | "path">>;
-
