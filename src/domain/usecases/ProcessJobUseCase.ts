@@ -46,6 +46,29 @@ export interface ProcessJobSettings {
 export class ProcessJobUseCase {
 	// Static lock to prevent double-spawning the same job
 	private static readonly spawnLock = new Set<string>();
+
+	public static formatSidecarError(error: unknown, exitCode?: number): string {
+		const msg = error instanceof Error ? error.message : String(error);
+		const lowerMsg = msg.toLowerCase();
+		if (
+			lowerMsg.includes("enoent") ||
+			lowerMsg.includes("program not found") ||
+			lowerMsg.includes("cannot find")
+		) {
+			return "Missing Executable: The sidecar binary could not be found.";
+		}
+		if (lowerMsg.includes("eacces") || lowerMsg.includes("permission denied")) {
+			return "Permission Denied: Lacking rights to execute the sidecar binary.";
+		}
+		if (lowerMsg.includes("corrupt") || lowerMsg.includes("invalid")) {
+			return `Corrupted Output: The tool encountered invalid or corrupted data. (${msg})`;
+		}
+		if (exitCode !== undefined && exitCode !== 0) {
+			return `Non-Zero Exit: Process failed with code ${exitCode}. Check logs for details.`;
+		}
+		return msg;
+	}
+
 	private static readonly MIN_PROGRESS_DELTA_PERCENT = 0.25;
 	private static readonly PROGRESS_UPDATE_MIN_INTERVAL_MS = 150;
 	private static readonly TEMP_DIR_NAME = ".retropacker_temp";
@@ -304,7 +327,12 @@ export class ProcessJobUseCase {
 								job.endTime.value = Date.now();
 							} else {
 								job.setStatus("failed");
-								job.setErrorMessage(`Exited with code ${result.code}`);
+								const msg = `Exited with code ${result.code}`;
+								const friendlyMsg = ProcessJobUseCase.formatSidecarError(
+									msg,
+									result.code ?? undefined,
+								);
+								job.setErrorMessage(friendlyMsg);
 								job.endTime.value = Date.now();
 							}
 						} catch (error) {
@@ -339,8 +367,11 @@ export class ProcessJobUseCase {
 							}
 
 							job.appendLog(`Error: ${error.message}`);
+							const friendlyMsg = ProcessJobUseCase.formatSidecarError(
+								error.message,
+							);
 							job.setStatus("failed");
-							job.setErrorMessage(error.message);
+							job.setErrorMessage(friendlyMsg);
 							job.endTime.value = Date.now();
 						} catch (handlerError) {
 							console.error(
@@ -369,8 +400,10 @@ export class ProcessJobUseCase {
 				return;
 			}
 
-			const errorMessage =
+			const rawErrorMessage =
 				e instanceof Error ? e.message : "Failed to spawn process";
+			const errorMessage =
+				ProcessJobUseCase.formatSidecarError(rawErrorMessage);
 			job.setStatus("failed");
 			job.setErrorMessage(errorMessage);
 			job.appendLog(`Exception: ${errorMessage}`);

@@ -1,5 +1,6 @@
 import { Pause, Play, RotateCcw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
+import { AboutDialog } from "@/components/dashboard/AboutDialog";
 import { BatchProgressBar } from "@/components/dashboard/BatchProgressBar";
 import { GlobalSettings } from "@/components/dashboard/GlobalSettings";
 import { WorkflowTabs } from "@/components/dashboard/WorkflowTabs";
@@ -136,6 +137,7 @@ function AppContent() {
 							/>
 						</div>
 						<GlobalSettings />
+						<AboutDialog />
 
 						{queue.length > 0 && (
 							<div className="flex gap-2">

@@ -1,5 +1,8 @@
-import { open } from "@tauri-apps/plugin-dialog";
-import { FolderOpen, Settings, X } from "lucide-react";
+import { appDataDir } from "@tauri-apps/api/path";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { writeFile } from "@tauri-apps/plugin-fs";
+import { openPath } from "@tauri-apps/plugin-opener";
+import { Download, Folder, FolderOpen, Settings, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -17,6 +20,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { jobStore } from "@/stores/JobStore";
 import { usePackerStore } from "@/stores/usePackerStore";
 
 export function GlobalSettings() {
@@ -45,6 +49,49 @@ export function GlobalSettings() {
 		}
 	};
 
+	const handleExportLogs = async () => {
+		try {
+			const path = await save({
+				filters: [{ name: "Logs", extensions: ["txt"] }],
+				defaultPath: "retropacker-logs.txt",
+			});
+			if (!path) return;
+
+			const allWorkflows = ["compress", "extract", "verify", "info"] as const;
+			let logContents =
+				"RetroPacker Diagnostics Logs\n============================\n\n";
+
+			let hasJobs = false;
+			for (const wf of allWorkflows) {
+				const jobs = jobStore.queues[wf].value;
+				if (jobs.length > 0) {
+					hasJobs = true;
+					logContents += `\n--- WORKFLOW: ${wf.toUpperCase()} ---\n`;
+					for (const job of jobs) {
+						logContents += `\nJob: ${job.filename} (${job.id})\nStatus: ${job.status}\n`;
+						if (job.errorMessage) logContents += `Error: ${job.errorMessage}\n`;
+						logContents += `Logs:\n${job.outputLog.value.join("\n")}\n----------------\n`;
+					}
+				}
+			}
+			if (!hasJobs) logContents += "No jobs in current session.\n";
+
+			const bytes = new TextEncoder().encode(logContents);
+			await writeFile(path, bytes);
+		} catch (error) {
+			console.error("Failed to export logs:", error);
+		}
+	};
+
+	const handleOpenConfigFolder = async () => {
+		try {
+			const configPath = await appDataDir();
+			await openPath(configPath);
+		} catch (error) {
+			console.error("Failed to open config folder:", error);
+		}
+	};
+
 	return (
 		<Dialog>
 			<DialogTrigger asChild>
@@ -69,9 +116,10 @@ export function GlobalSettings() {
 
 				<div className="py-2">
 					<Tabs defaultValue="general" className="w-full">
-						<TabsList className="w-full grid grid-cols-2">
+						<TabsList className="w-full grid grid-cols-3">
 							<TabsTrigger value="general">General</TabsTrigger>
 							<TabsTrigger value="compression">Compression Engines</TabsTrigger>
+							<TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
 						</TabsList>
 
 						{/* General Tab */}
@@ -285,6 +333,51 @@ export function GlobalSettings() {
 									</div>
 								</TabsContent>
 							</Tabs>
+						</TabsContent>
+
+						{/* Diagnostics Tab */}
+						<TabsContent
+							value="diagnostics"
+							className="p-4 border rounded-md mt-2 space-y-4 min-h-[300px]"
+						>
+							<h3 className="text-sm font-medium text-foreground mb-2">
+								Troubleshooting & Logs
+							</h3>
+							<div className="space-y-4">
+								<div className="flex flex-col gap-1 p-2 hover:bg-muted/50 rounded-md transition-colors">
+									<span className="text-sm font-medium">
+										Export Session Logs
+									</span>
+									<span className="text-xs text-muted-foreground pb-2">
+										Save all current job logs and statuses to a file for
+										troubleshooting.
+									</span>
+									<Button
+										onClick={handleExportLogs}
+										className="w-fit gap-2"
+										variant="secondary"
+									>
+										<Download className="h-4 w-4" /> Export Logs
+									</Button>
+								</div>
+
+								<div className="flex flex-col gap-1 p-2 hover:bg-muted/50 rounded-md transition-colors">
+									<span className="text-sm font-medium">
+										Configuration Folder
+									</span>
+									<span className="text-xs text-muted-foreground pb-2">
+										Open the directory where application settings and cache are
+										stored.
+									</span>
+									<Button
+										onClick={handleOpenConfigFolder}
+										className="w-fit gap-2"
+										variant="secondary"
+									>
+										<Folder className="h-4 w-4" /> Open Config Folder
+									</Button>
+								</div>
+							</div>
 						</TabsContent>
 					</Tabs>
 				</div>
