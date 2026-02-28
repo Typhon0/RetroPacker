@@ -11,6 +11,16 @@
 		"shell:allow-kill",
 		"dialog:default",
 		"notification:default",
+		"opener:default",
+		"opener:allow-reveal-item-in-dir",
+		{
+			"identifier": "opener:allow-open-path",
+			"allow": [
+				{
+					"path": "**"
+				}
+			]
+		},
 		{
 			"identifier": "shell:allow-execute",
 			"allow": [

@@ -74,7 +74,7 @@ export function buildTree(jobs: TreeJob[]): TreeNode {
 		const parts = allParts.slice(skipDepth);
 
 		let current = root;
-		let currentPath = commonPrefix.join("/");
+		let currentPath = commonPrefix.slice(0, skipDepth).join("/");
 
 		for (const part of parts) {
 			currentPath = currentPath ? `${currentPath}/${part}` : part;

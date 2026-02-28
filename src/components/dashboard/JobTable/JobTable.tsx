@@ -21,6 +21,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { ChevronsUpDown, Filter } from "lucide-react";
+import { revealItemInDir, openPath } from "@tauri-apps/plugin-opener";
 import { Button } from "@/components/ui/button";
 import {
 	Select,
@@ -194,6 +195,19 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 		},
 		[workflow],
 	);
+
+	const handleOpenJobLocationById = useCallback(
+		(jobId: string) => {
+			const job = jobStore.getJob(workflow, jobId);
+			if (!job) return;
+			revealItemInDir(job.path).catch((e) => console.warn("Failed to reveal location", e));
+		},
+		[workflow],
+	);
+
+	const handleOpenFolderLocation = useCallback((path: string) => {
+		openPath(path).catch((e) => console.warn("Failed to open folder", e));
+	}, []);
 
 	const [statusFilter, setStatusFilter] = useState<string>("all");
 	const [systemFilter, setSystemFilter] = useState<string>("all");
@@ -760,6 +774,7 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 													setFolderPlatform(row.node.path, platform)
 												}
 												onRemove={() => handleRemoveFolder(row.node)}
+												onOpenLocation={() => handleOpenFolderLocation(row.node.path)}
 											/>
 										);
 									}
@@ -775,6 +790,7 @@ export function JobTable({ workflow, onSelectJob, selectedJobId }: JobTableProps
 											onStart={handleStartJobById}
 											onRemove={handleRemoveJobById}
 											onUpdatePlatform={handleUpdatePlatformById}
+											onOpenLocation={handleOpenJobLocationById}
 										/>
 									);
 								})}

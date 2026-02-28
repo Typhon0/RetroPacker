@@ -20,6 +20,7 @@ import {
 	Play,
 	XCircle,
 	Trash2,
+	FolderOpen,
 } from "lucide-react";
 import type { Platform } from "@/domain/types/platform.types";
 import type { TreeNode } from "./JobTreeBuilder";
@@ -37,6 +38,7 @@ interface FolderRowProps {
 	onStartFolder: () => void;
 	onSetPlatform: (platform: Platform | undefined) => void;
 	onRemove: () => void;
+	onOpenLocation: () => void;
 }
 
 /**
@@ -55,6 +57,7 @@ function FolderRowComponent({
 	onStartFolder,
 	onSetPlatform,
 	onRemove,
+	onOpenLocation,
 }: FolderRowProps): React.ReactElement {
 	const currentValue = folderOverride || inferredPlatform || "auto";
 
@@ -127,6 +130,18 @@ function FolderRowComponent({
 							<Play className="h-3.5 w-3.5" />
 						</Button>
 					)}
+					<Button
+						variant="ghost"
+						size="icon"
+						className="h-7 w-7 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-all"
+						title="Open folder location"
+						onClick={(e) => {
+							e.stopPropagation();
+							onOpenLocation();
+						}}
+					>
+						<FolderOpen className="h-3.5 w-3.5" />
+					</Button>
 					<Button
 						variant="ghost"
 						size="icon"

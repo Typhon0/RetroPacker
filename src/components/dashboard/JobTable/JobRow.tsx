@@ -25,6 +25,7 @@ import {
 	AlertCircle,
 	Play,
 	Trash2,
+	FolderOpen,
 } from "lucide-react";
 import { cn, formatDuration } from "@/lib/utils";
 import type { JobState } from "@/domain/entities/JobState";
@@ -41,6 +42,7 @@ interface JobRowProps {
 	onStart: (jobId: string) => void;
 	onRemove: (jobId: string) => void;
 	onUpdatePlatform: (jobId: string, platform: Platform | undefined) => void;
+	onOpenLocation: (jobId: string) => void;
 }
 
 function getStatusIcon(status: string): React.ReactNode {
@@ -77,7 +79,10 @@ function formatRatio(ratio: number): string {
 	return `${Number.isInteger(ratio) ? ratio.toString() : ratio.toFixed(1)}%`;
 }
 
-function estimateSavedBytes(originalSize: number, compressionRatio: number): number {
+function estimateSavedBytes(
+	originalSize: number,
+	compressionRatio: number,
+): number {
 	return originalSize - originalSize * (compressionRatio / 100);
 }
 
@@ -89,7 +94,11 @@ const JobProgressCell = React.memo(({ job }: { job: JobState }) => {
 	return (
 		<TableCell className="w-[25%]">
 			<div className="flex flex-col gap-1">
-				<Progress value={progress} indeterminate={indeterminate && status === "processing"} className="h-2" />
+				<Progress
+					value={progress}
+					indeterminate={indeterminate && status === "processing"}
+					className="h-2"
+				/>
 				{status === "processing" && (
 					<span className="text-xs text-muted-foreground">
 						{indeterminate ? "Processing…" : `${progress.toFixed(1)}%`}
@@ -136,7 +145,9 @@ const JobSizeCell = React.memo(({ job }: { job: JobState }) => {
 	return (
 		<TableCell className="text-right">
 			<div className="inline-flex max-w-full items-center justify-end gap-1.5 whitespace-nowrap text-xs font-mono">
-				<span className="text-muted-foreground">{formatSize(job.originalSize)}</span>
+				<span className="text-muted-foreground">
+					{formatSize(job.originalSize)}
+				</span>
 				{showRatio && (
 					<span className="inline-flex items-center rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-sky-500">
 						{formatRatio(compressionRatio)}
@@ -169,6 +180,7 @@ const JobRowComponent = ({
 	onStart,
 	onRemove,
 	onUpdatePlatform,
+	onOpenLocation,
 }: JobRowProps): React.ReactElement => {
 	const status = useSignalValue(job.status);
 	const system = useSignalValue(job.system);
@@ -205,7 +217,10 @@ const JobRowComponent = ({
 						disabled={isDisabled}
 					>
 						<SelectTrigger
-							className={cn("h-7 w-[100px] text-xs", isDisabled && "opacity-50")}
+							className={cn(
+								"h-7 w-[100px] text-xs",
+								isDisabled && "opacity-50",
+							)}
 							onClick={(e) => e.stopPropagation()}
 						>
 							<SelectValue />
@@ -256,6 +271,18 @@ const JobRowComponent = ({
 							<Play className="h-4 w-4" />
 						</Button>
 					)}
+					<Button
+						variant="ghost"
+						size="icon"
+						className="h-8 w-8 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-all"
+						title="Open location"
+						onClick={(e) => {
+							e.stopPropagation();
+							onOpenLocation(job.id);
+						}}
+					>
+						<FolderOpen className="h-4 w-4" />
+					</Button>
 					<Button
 						variant="ghost"
 						size="icon"
