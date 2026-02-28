@@ -96,6 +96,21 @@ export class MockFileSystemRepository implements IFileSystemRepository {
 	}
 
 	/**
+	 * Return empty string for mock.
+	 */
+	async readTextFile(_path: string): Promise<string> {
+		console.log("[MOCK] readTextFile called");
+		return "";
+	}
+
+	/**
+	 * No-op for mock.
+	 */
+	async removeDirectory(_path: string): Promise<void> {
+		console.log("[MOCK] removeDirectory called");
+	}
+
+	/**
 	 * Return a mock hash.
 	 */
 	async computeFileHash(_path: string): Promise<string> {

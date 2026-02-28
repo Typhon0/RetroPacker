@@ -1,74 +1,61 @@
-# RetroPacker
+# RetroPacker 📦🎮
 
-The "Handbrake for ROMs" - A professional-grade, cross-platform compression tool for PS1, PS2, PSP, Dreamcast, Saturn, GameCube, and Wii games using `chdman` and `DolphinTool`.
+<p align="center">
+  <img src="./docs/assets/banner.png" alt="RetroPacker Banner" width="400" />
+</p>
 
-## Features
+A high-performance GUI application built with **Tauri and React** for managing, packing, unpacking, and verifying retro game ROMs. Easily process formats like **CHD**, **RVZ**, and **CSO** without memorizing command-line arguments for standard tools like `chdman` or `DolphinTool`.
 
-- **Batteries Included**: Embeds `chdman` and `DolphinTool` as sidecar binaries.
-- **Intelligent Engine**: Auto-detects optimal strategy (DVD vs CD vs GDI) and platform (via extension, path, and binary header analysis).
-- **Preset System**: From "Balanced" to "Raw/Lossless", plus custom codec strings.
-- **Concurrency**: Parallel processing with auto-detected hardware concurrency.
-- **Queue System**: Batch processing with real-time logs, progress tracking, ETA, and compression ratio stats.
-- **Queue Persistence**: Queue state survives app restarts via Tauri Store.
-- **Cover Art**: Automatic cover art fetching from GameTDB, LibRetro Thumbnails, and local files.
-- **Modern UI**: Industrial Dark theme built with Tauri v2, React, Shadcn UI, and Tailwind CSS.
-- **Sleep Prevention**: Prevents system sleep during active processing via Wake Lock API.
-- **Taskbar Progress**: Shows batch progress in the OS taskbar.
+## 🚀 Features
 
-## Setup Instructions
+- **Multi-Workflow Support:**
+  - **Compress:** Convert and compress your game dumps.
+  - **Extract:** Decompress archives back to original disc images.
+  - **Verify:** Validate the integrity of your ROMs (configurable `verifyAlgorithm`).
+  - **Info:** Extract and view header information/metadata, robust game ID parsing (e.g., PSP `.iso` / `.cso`), and active cover art fetching.
+- **Batch Processing & Quality-of-Life:** Supports adding massive numbers of jobs to a virtualized queue. Configurable concurrency with automatic hardware thread detection for optimal processing.
+- **Robust Orchestration:** Easily Pause, Play, Clear, or Retry jobs. Features reliable internal process cancellation (prevents orphaned CLI subprocesses upon exiting or job cancellation).
+- **Blazing Fast UI Updates:** Built with a specialized hybrid state model. Uses **Zustand** for global workflow signaling and **Preact Signals** for localized high-frequency job telemetry (progress bars, terminal log ingestion, ETA) to avoid React render path stuttering.
+- **Deep Customization:** Configure tool-specific parameters like `extractGameOnly` via the Global Settings UI. Set custom output directories and toggle options like `deleteSourceAfterSuccess`.
+
+## 🛠️ Supported Formats & Integrations
+
+- **chdman (MAME):** Automates CD/DVD-based game compression (PS1, PS2, Saturn, Sega CD, etc.) to `.chd`.
+- **DolphinTool:** Handles GameCube (`.iso`, `.gcm`) and Wii (`.iso`, `.wbfs`) compression/extraction to `.rvz`.
+- **CSO Tooling:** Supports handling and interpreting PlayStation Portable (PSP) image variants (`.iso` / `.cso`).
+
+## 🖥️ Tech Stack
+
+- **Frontend:** React 19, TypeScript, Vite, Tailwind CSS, Shadcn UI
+- **State Management:** Zustand (store state), `@preact/signals-core` (telemetry state)
+- **Backend Core:** Rust & Tauri 2.0 (with Tauri plugins for filesystem, async HTTP, and process execution)
+- **Architecture Overview:** Clean Architecture approach bridging React hooks with core Use Cases (`ProcessJobUseCase`, `ManageQueueUseCase`) and Repositories (`ICommandExecutor`). *See [ARCHITECTURE.md](./docs/ARCHITECTURE.md) for full context.*
+
+## ⚙️ Getting Started
 
 ### Prerequisites
-- Node.js (v18+)
-- pnpm
-- Rust (Stable)
-- System dependencies for Tauri (Linux only: `libwebkit2gtk-4.0-dev` etc.)
 
-### 1. Install Dependencies
+- [Node.js](https://nodejs.org/) (latest LTS recommended)
+- [Rust](https://www.rust-lang.org/tools/install) (latest stable)
+- C++ build tools required by [Tauri v2 dependencies](https://v2.tauri.app/start/prerequisites/)
+
+### Development
+
 ```bash
+# Install dependencies
 pnpm install
+
+# Start the frontend dev server and the Tauri window
+pnpm run tauri dev
 ```
 
-### 2. Download Binaries (Critical)
-RetroPacker requires external binaries to be placed in `src-tauri/binaries/`.
-Due to licensing/distribution, you must provide these yourself.
+### Build for Production
 
-1.  Download `chdman` for your OS (part of MAME tools) for CD/DVD images.
-2.  *(Optional)* Download `DolphinTool` for your OS (part of Dolphin Emulator) for GameCube/Wii `.rvz` support.
-3.  Rename and place them in `src-tauri/binaries/`:
-
-    **For Windows:**
-    - `chdman-x86_64-pc-windows-msvc.exe`
-    - `DolphinTool-x86_64-pc-windows-msvc.exe`
-
-    **For Linux:**
-    - `chdman-x86_64-unknown-linux-gnu`
-    - `DolphinTool-x86_64-unknown-linux-gnu`
-
-    **For macOS (Silicon):**
-    - `chdman-aarch64-apple-darwin`
-    - `DolphinTool-aarch64-apple-darwin`
-
-    **For macOS (Intel):**
-    - `chdman-x86_64-apple-darwin`
-    - `DolphinTool-x86_64-apple-darwin`
-
-*Note: The target triple suffix is required for Tauri sidecars to find the correct binary.*
-
-### 3. Development
 ```bash
-npm run tauri dev
+# Build the React TS bundle and compile the optimized Rust binary
+pnpm run tauri build
 ```
 
-### 4. Build
-```bash
-npm run tauri build
-```
+## 📄 License
 
-## Architecture
-
-- **Frontend**: React 19 + TypeScript + Vite + Tailwind CSS + Shadcn UI (Radix primitives).
-- **State Management**: Preact Signals (`JobStore`) for fine-grained reactive job state, Zustand (`usePackerStore`) for persisted user settings.
-- **Domain Layer**: Clean Architecture with use cases (`ProcessJobUseCase`, `ManageQueueUseCase`, `DetectSystemUseCase`), entities (`JobState`), and repository interfaces.
-- **Data Layer**: Tauri implementations (`TauriCommandExecutor`, `TauriFileSystemRepository`, `TauriNotificationService`) injected via React context (`RepositoryProvider`).
-- **Services**: `ProcessRegistry` (process lifecycle and cancellation), `MetadataService` (cover art and game ID extraction), `BinaryManagerService` (sidecar binary management).
-- **Backend**: Tauri v2 (Rust) providing SHA-256 file hashing, binary byte reading, and Shell Plugin for sidecar process management.
+Refer to the [LICENSE](./LICENSE) file for usage and distribution details.

@@ -113,6 +113,21 @@ export interface IFileSystemRepository {
 	moveToTrash(path: string): Promise<boolean>;
 
 	/**
+	 * Read file contents as a UTF-8 text string.
+	 *
+	 * @param path - Path to the file
+	 * @returns File contents as string
+	 */
+	readTextFile(path: string): Promise<string>;
+
+	/**
+	 * Recursively remove a directory and all its contents.
+	 *
+	 * @param path - Directory path to remove
+	 */
+	removeDirectory(path: string): Promise<void>;
+
+	/**
 	 * Compute a SHA-256 hash of a file.
 	 *
 	 * @param path - Path to the file
@@ -120,4 +135,3 @@ export interface IFileSystemRepository {
 	 */
 	computeFileHash(path: string): Promise<string>;
 }
-

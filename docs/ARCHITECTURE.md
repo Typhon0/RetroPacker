@@ -2,8 +2,8 @@
 
 ## Overview
 RetroPacker uses a hybrid model:
-- `JobStore` + `JobState` (signals) for high-frequency job telemetry.
-- `useQueueStore` (Zustand) for workflow control state.
+- `JobStore` + `JobState` (signals) for high-frequency job telemetry and queue management.
+- `usePackerStore` (Zustand) for global application settings.
 - Use cases (`ManageQueueUseCase`, `ProcessJobUseCase`) for queue and processing orchestration.
 
 This separation keeps progress/log updates off the broad React render path.
@@ -24,6 +24,8 @@ Location: `src/stores/JobStore.ts`
 Owns:
 - Master job list.
 - Computed workflow queues.
+- `isProcessing` state per workflow.
+- `startRequests` queue for manual job starts.
 - Computed runtime snapshots and summaries (`queueStats`, `queueSummaries`, `globalSummary`), including estimated compression savings from final ratios.
 
 Responsibilities:
@@ -31,19 +33,18 @@ Responsibilities:
 - Retry failed jobs.
 - Dispose removed jobs (clears timers/resources).
 
-### `useQueueStore` (workflow control store)
-Location: `src/stores/useJobStateStore.ts`
+### `usePackerStore` (settings and global state)
+Location: `src/stores/usePackerStore.ts`
 
 Owns:
-- `isProcessing` per workflow.
-- `startRequests` queue for manual starts.
-
-Delegates job mutations to `JobStore`.
+- Active workflow state.
+- Global and tool-specific settings (Compression, CHD, Dolphin).
+- Output directory and completion behaviors.
 
 ## Processing Flow
 
 ### Queue intake
-`DropZone` -> `useQueueManager` -> `ManageQueueUseCase` -> `IJobRepository.addJob` -> `JobStore`.
+`DropZone` -> `useQueueManager` -> `ManageQueueUseCase` (in `src/domain/usecases/`) -> `IJobRepository.addJob` -> `JobStore`.
 
 ### Dispatch loop
 `useQueueProcessor` watches queue stats + control signals and dispatches jobs with `ProcessJobUseCase`.
@@ -62,10 +63,11 @@ Core dispatch decision logic is isolated in:
 ## Cancellation Model
 Location: `src/services/ProcessRegistry.ts`
 
-`ProcessRegistry` provides:
+`ProcessRegistry` is a module-scoped registry that provides:
 - Per-job cancellation latches.
 - Per-workflow cancellation latches.
 - Spawned process registry and termination helpers.
+- Forced kill support via an injected `ICommandExecutor`.
 
 `ProcessJobUseCase` checks latches before spawn and in terminal callbacks to avoid race conditions.
 

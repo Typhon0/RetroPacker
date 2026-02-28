@@ -19,7 +19,7 @@ class TestCommandExecutor implements ICommandExecutor {
 			args: string[],
 			callbacks: CommandCallbacks,
 		) => Promise<SpawnedProcess>,
-	) { }
+	) {}
 
 	spawn(
 		binary: BinaryName,
@@ -57,7 +57,7 @@ function createCapturingExecutor(): {
 			setTimeout(() => {
 				callbacks.onClose?.({ code: 0, signal: null });
 			}, 0);
-			return { pid: 200, async kill() { } };
+			return { pid: 200, async kill() {} };
 		},
 	);
 
@@ -104,6 +104,12 @@ const baseFileSystem: IFileSystemRepository = {
 	async moveToTrash() {
 		return true;
 	},
+	async readTextFile() {
+		return "";
+	},
+	async removeDirectory() {
+		return;
+	},
 	async computeFileHash() {
 		return "";
 	},
@@ -114,8 +120,8 @@ function createNotificationServiceSpy(): {
 	notifySuccess: ReturnType<typeof vi.fn>;
 	notifyFailure: ReturnType<typeof vi.fn>;
 } {
-	const notifySuccess = vi.fn(async () => { });
-	const notifyFailure = vi.fn(async () => { });
+	const notifySuccess = vi.fn(async () => {});
+	const notifyFailure = vi.fn(async () => {});
 
 	return {
 		notifySuccess,
@@ -265,7 +271,7 @@ describe("ProcessJobUseCase", () => {
 	});
 
 	it("skips execution when workflow is cancelled before start", async () => {
-		const spy = vi.spyOn(console, "log").mockImplementation(() => { });
+		const spy = vi.spyOn(console, "log").mockImplementation(() => {});
 		const job = createJob("job-skipped");
 		const notifications = createNotificationServiceSpy();
 		const commandExecutor = new TestCommandExecutor(async () => {
@@ -299,7 +305,7 @@ describe("ProcessJobUseCase endTime", () => {
 				setTimeout(() => {
 					callbacks.onClose?.({ code: 0, signal: null });
 				}, 0);
-				return { pid: 300, async kill() { } };
+				return { pid: 300, async kill() {} };
 			},
 		);
 
@@ -325,7 +331,7 @@ describe("ProcessJobUseCase endTime", () => {
 				setTimeout(() => {
 					callbacks.onClose?.({ code: 1, signal: null });
 				}, 0);
-				return { pid: 301, async kill() { } };
+				return { pid: 301, async kill() {} };
 			},
 		);
 
@@ -478,7 +484,7 @@ describe("ProcessJobUseCase tool selection", () => {
 					callbacks.onStderr?.("No bundle id found");
 					callbacks.onClose?.({ code: 0, signal: null });
 				}, 0);
-				return { pid: 777, async kill() { } };
+				return { pid: 777, async kill() {} };
 			},
 		);
 
@@ -495,7 +501,9 @@ describe("ProcessJobUseCase tool selection", () => {
 		});
 
 		const logs = job.toJobProps().outputLog;
-		expect(logs.some((line) => line.includes("No bundle id found"))).toBe(false);
+		expect(logs.some((line) => line.includes("No bundle id found"))).toBe(
+			false,
+		);
 		job.dispose();
 	});
 
@@ -572,7 +580,7 @@ describe("ProcessJobUseCase failures", () => {
 				setTimeout(() => {
 					callbacks.onClose?.({ code: 42, signal: null });
 				}, 0);
-				return { pid: 400, async kill() { } };
+				return { pid: 400, async kill() {} };
 			},
 		);
 
@@ -596,7 +604,7 @@ describe("ProcessJobUseCase failures", () => {
 				setTimeout(() => {
 					callbacks.onError?.(new Error("Binary not found"));
 				}, 0);
-				return { pid: 401, async kill() { } };
+				return { pid: 401, async kill() {} };
 			},
 		);
 

@@ -9,7 +9,6 @@ import { usePrevious } from "./usePrevious";
 import type { JobState } from "@/domain/entities/JobState";
 import type { WorkflowType } from "@/domain/types/workflow.types";
 
-
 export interface QueueDispatchPlan {
 	processingCount: number;
 	nextJob: JobState | undefined;
@@ -113,7 +112,7 @@ export function useQueueProcessor(workflow: WorkflowType) {
 
 	const prevIsProcessing = usePrevious(isProcessing);
 
-	// Batch completion notification
+	// Batch completion notification + M3U generation
 	useEffect(() => {
 		// If we were processing, but now we're not, and the queue has jobs,
 		// and there are no more pending/processing jobs...
@@ -130,7 +129,55 @@ export function useQueueProcessor(workflow: WorkflowType) {
 					? `Batch ${label} complete with ${queueStats.failedCount} failures.`
 					: `Batch ${label} completed successfully!`;
 
-			repositories.notificationService.notifySuccess(`${label} Complete`, text).catch();
+			repositories.notificationService
+				.notifySuccess(`${label} Complete`, text)
+				.catch();
+
+			// M3U playlist generation for compress workflow
+			if (workflow === "compress" && queueStats.completedCount > 0) {
+				void (async () => {
+					try {
+						const queue = jobStore.getQueue(workflow);
+						const completedPaths: string[] = [];
+
+						for (const job of queue) {
+							if (job.status.value !== "completed") continue;
+							const baseName = job.filename.replace(/\.[^.]+$/, "");
+							const outputDir = settings.outputDirectory
+								? settings.outputDirectory
+								: await repositories.fileSystem.dirname(job.path);
+							const chdPath = await repositories.fileSystem.joinPath(
+								outputDir,
+								`${baseName}.chd`,
+							);
+							completedPaths.push(chdPath);
+						}
+
+						if (completedPaths.length > 0) {
+							const { M3uGeneratorService } = await import(
+								"@/services/M3uGeneratorService"
+							);
+							const outputDir = settings.outputDirectory
+								? settings.outputDirectory
+								: await repositories.fileSystem.dirname(
+										jobStore.getQueue(workflow)[0].path,
+									);
+							const generated = await M3uGeneratorService.generateM3uFiles(
+								outputDir,
+								completedPaths,
+								repositories.fileSystem,
+							);
+							if (generated.length > 0) {
+								console.log(
+									`[QueueProcessor] Generated ${generated.length} M3U playlist(s)`,
+								);
+							}
+						}
+					} catch (err) {
+						console.warn("[QueueProcessor] M3U generation failed:", err);
+					}
+				})();
+			}
 		}
 	}, [
 		isProcessing,
@@ -139,8 +186,11 @@ export function useQueueProcessor(workflow: WorkflowType) {
 		queueStats.pendingCount,
 		queueStats.processingCount,
 		queueStats.failedCount,
+		queueStats.completedCount,
 		workflow,
 		repositories.notificationService,
+		repositories.fileSystem,
+		settings.outputDirectory,
 	]);
 
 	useEffect(() => {
@@ -179,7 +229,10 @@ export function useQueueProcessor(workflow: WorkflowType) {
 				processJobUseCase
 					.execute(plan.nextJob, outputDir, workflow, settings)
 					.catch((err) => {
-						console.error(`[QueueProcessor] Job execution failed unhandled:`, err);
+						console.error(
+							`[QueueProcessor] Job execution failed unhandled:`,
+							err,
+						);
 					});
 			} catch (e) {
 				console.error("Failed to start job", e);
@@ -204,4 +257,3 @@ export function useQueueProcessor(workflow: WorkflowType) {
 		processJobUseCase,
 	]);
 }
-

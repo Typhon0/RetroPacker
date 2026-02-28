@@ -11,6 +11,8 @@ import {
 	readDir,
 	mkdir,
 	writeTextFile,
+	readTextFile,
+	remove,
 } from "@tauri-apps/plugin-fs";
 import { join, dirname as pathDirname } from "@tauri-apps/api/path";
 import { invoke } from "@tauri-apps/api/core";
@@ -165,6 +167,20 @@ Add-Type -AssemblyName Microsoft.VisualBasic
 			console.error("Trash operation failed:", e);
 			return false;
 		}
+	}
+
+	/**
+	 * Read file contents as UTF-8 text.
+	 */
+	async readTextFile(path: string): Promise<string> {
+		return readTextFile(path);
+	}
+
+	/**
+	 * Recursively remove a directory and all its contents.
+	 */
+	async removeDirectory(path: string): Promise<void> {
+		await remove(path, { recursive: true });
 	}
 
 	/**

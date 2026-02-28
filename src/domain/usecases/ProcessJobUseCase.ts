@@ -14,6 +14,7 @@ import {
 import { INotificationService } from "../repositories/INotificationService";
 import { IFileSystemRepository } from "../repositories/IFileSystemRepository";
 import { ProcessRegistry } from "@/services/ProcessRegistry";
+import { CueProcessorService } from "@/services/CueProcessorService";
 
 /**
  * Dependencies for ProcessJobUseCase.
@@ -47,8 +48,9 @@ export class ProcessJobUseCase {
 	private static readonly spawnLock = new Set<string>();
 	private static readonly MIN_PROGRESS_DELTA_PERCENT = 0.25;
 	private static readonly PROGRESS_UPDATE_MIN_INTERVAL_MS = 150;
+	private static readonly TEMP_DIR_NAME = ".retropacker_temp";
 
-	constructor(private readonly deps: ProcessJobDependencies) { }
+	constructor(private readonly deps: ProcessJobDependencies) {}
 
 	/**
 	 * Execute the job processing.
@@ -108,6 +110,12 @@ export class ProcessJobUseCase {
 			ProcessJobUseCase.spawnLock.delete(lockKey);
 		};
 
+		// Create temp dir once — used by both CUE preprocessing and DolphinTool
+		const tempDir = await this.deps.fileSystem.joinPath(
+			outputDir,
+			ProcessJobUseCase.TEMP_DIR_NAME,
+		);
+
 		try {
 			// Re-check after locking and before mutating job state.
 			if (isCancelledBeforeStart()) {
@@ -131,6 +139,29 @@ export class ProcessJobUseCase {
 			this.validateWorkflowSupport(workflow, ext, usesDolphin);
 			const binary = usesDolphin ? "DolphinTool" : "chdman";
 
+			// Smart CUE preprocessing (chdman compress only)
+			let overrideInputPath: string | undefined;
+			if (!usesDolphin && workflow === "compress") {
+				try {
+					const preprocessed = await CueProcessorService.prepareInput(
+						job.path,
+						outputDir,
+						this.deps.fileSystem,
+					);
+					if (preprocessed) {
+						overrideInputPath = preprocessed;
+						job.appendLog(`Preprocessed CUE: ${preprocessed}`);
+					}
+				} catch (cueErr) {
+					const msg = cueErr instanceof Error ? cueErr.message : String(cueErr);
+					job.setStatus("failed");
+					job.setErrorMessage("Failed to preprocess CUE file.");
+					job.appendLog(`CUE preprocessing failed: ${msg}`);
+					job.endTime.value = Date.now();
+					return;
+				}
+			}
+
 			// Build command arguments
 			const args = await this.buildCommandArgs(
 				job,
@@ -138,15 +169,21 @@ export class ProcessJobUseCase {
 				workflow,
 				settings,
 				usesDolphin,
+				overrideInputPath,
 			);
 
 			// Skip if output file already exists and skipExisting is enabled
-			if (settings.skipExisting && (workflow === "compress" || workflow === "extract")) {
+			if (
+				settings.skipExisting &&
+				(workflow === "compress" || workflow === "extract")
+			) {
 				const outputIndex = args.indexOf("-o");
 				if (outputIndex !== -1 && outputIndex + 1 < args.length) {
 					const outputPath = args[outputIndex + 1];
 					if (await this.deps.fileSystem.exists(outputPath)) {
-						job.appendLog(`Skipped — output file already exists: ${outputPath}`);
+						job.appendLog(
+							`Skipped — output file already exists: ${outputPath}`,
+						);
 						job.setStatus("completed");
 						job.updateProgress(100, 0);
 						job.endTime.value = Date.now();
@@ -189,7 +226,10 @@ export class ProcessJobUseCase {
 							}
 
 							// Check if job was cancelled by user
-							const wasCancelled = ProcessRegistry.wasCancelled(workflow, job.id);
+							const wasCancelled = ProcessRegistry.wasCancelled(
+								workflow,
+								job.id,
+							);
 							ProcessRegistry.clearCancelled(workflow, job.id);
 
 							if (result.code === 0) {
@@ -204,7 +244,9 @@ export class ProcessJobUseCase {
 									(workflow === "compress" || workflow === "extract")
 								) {
 									try {
-										const moved = await this.deps.fileSystem.moveToTrash(job.path);
+										const moved = await this.deps.fileSystem.moveToTrash(
+											job.path,
+										);
 										if (moved) {
 											job.appendLog(
 												`Source file moved to recycle bin: ${job.filename}`,
@@ -215,7 +257,8 @@ export class ProcessJobUseCase {
 											);
 										}
 									} catch (err) {
-										const msg = err instanceof Error ? err.message : String(err);
+										const msg =
+											err instanceof Error ? err.message : String(err);
 										job.appendLog(
 											`Warning: Failed to delete source file: ${msg}`,
 										);
@@ -248,7 +291,10 @@ export class ProcessJobUseCase {
 								return;
 							}
 
-							const wasCancelled = ProcessRegistry.wasCancelled(workflow, job.id);
+							const wasCancelled = ProcessRegistry.wasCancelled(
+								workflow,
+								job.id,
+							);
 							ProcessRegistry.clearCancelled(workflow, job.id);
 
 							if (wasCancelled) {
@@ -297,6 +343,12 @@ export class ProcessJobUseCase {
 			if (!cleanupOwnedByCallbacks) {
 				cleanup();
 			}
+			// Clean up temp directory
+			try {
+				await this.deps.fileSystem.removeDirectory(tempDir);
+			} catch {
+				// Temp dir may not exist or may already be cleaned
+			}
 		}
 	}
 
@@ -335,11 +387,18 @@ export class ProcessJobUseCase {
 		workflow: WorkflowType,
 		settings: ProcessJobSettings,
 		usesDolphin: boolean,
+		overrideInputPath?: string,
 	): Promise<string[]> {
 		if (usesDolphin) {
 			return this.buildDolphinArgs(job, outputDir, workflow, settings);
 		}
-		return this.buildChdmanArgs(job, outputDir, workflow, settings);
+		return this.buildChdmanArgs(
+			job,
+			outputDir,
+			workflow,
+			settings,
+			overrideInputPath,
+		);
 	}
 
 	/**
@@ -350,11 +409,13 @@ export class ProcessJobUseCase {
 		outputDir: string,
 		workflow: WorkflowType,
 		settings: ProcessJobSettings,
+		overrideInputPath?: string,
 	): Promise<string[]> {
 		const { fileSystem } = this.deps;
 		const { preset, customCompression, chd } = settings;
 		const outputBaseName = this.getOutputBaseName(job.filename);
 		const sourceExt = job.path.split(".").pop()?.toLowerCase() ?? "";
+		const inputPath = overrideInputPath ?? job.path;
 
 		let args: string[] = [];
 
@@ -363,7 +424,7 @@ export class ProcessJobUseCase {
 				outputDir,
 				`${outputBaseName}.chd`,
 			);
-			args = [job.strategy, "-i", job.path, "-o", outputPath];
+			args = [job.strategy, "-i", inputPath, "-o", outputPath];
 
 			// Compression args
 			const compressionArgs = this.getChdCompressionArgs(
@@ -433,8 +494,11 @@ export class ProcessJobUseCase {
 		const level = getCompressionLevel(preset);
 		const outputBaseName = this.getOutputBaseName(job.filename);
 
-		// User dir for temp files — must exist before DolphinTool is invoked
-		const userDir = await fileSystem.joinPath(outputDir, ".retropacker_temp");
+		// User dir for temp files — reuse the shared temp dir already created by execute()
+		const userDir = await fileSystem.joinPath(
+			outputDir,
+			ProcessJobUseCase.TEMP_DIR_NAME,
+		);
 		await fileSystem.createDirectory(userDir);
 		const baseArgs = (cmd: string) => [cmd, "-u", userDir];
 
@@ -524,9 +588,7 @@ export class ProcessJobUseCase {
 		usesDolphin: boolean,
 	): void {
 		if (workflow === "extract") {
-			const supported = usesDolphin
-				? ["rvz", "gcz", "wbfs", "wia"]
-				: ["chd"];
+			const supported = usesDolphin ? ["rvz", "gcz", "wbfs", "wia"] : ["chd"];
 			if (!supported.includes(ext)) {
 				throw new Error(
 					`Unsupported extract input format: .${ext || "unknown"}`,
@@ -535,11 +597,11 @@ export class ProcessJobUseCase {
 		}
 
 		if (workflow === "verify") {
-			const supported = usesDolphin
-				? ["rvz", "gcz", "wbfs", "gcm"]
-				: ["chd"];
+			const supported = usesDolphin ? ["rvz", "gcz", "wbfs", "gcm"] : ["chd"];
 			if (!supported.includes(ext)) {
-				throw new Error(`Unsupported verify input format: .${ext || "unknown"}`);
+				throw new Error(
+					`Unsupported verify input format: .${ext || "unknown"}`,
+				);
 			}
 		}
 	}
@@ -639,8 +701,6 @@ export class ProcessJobUseCase {
 		return normalized.includes("no bundle id found");
 	}
 
-
-
 	private createProgressEmitter(
 		job: JobState,
 	): (progress: number, etaSeconds?: number, force?: boolean) => void {
@@ -669,4 +729,3 @@ export class ProcessJobUseCase {
 		};
 	}
 }
-
