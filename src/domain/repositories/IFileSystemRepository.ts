@@ -144,4 +144,12 @@ export interface IFileSystemRepository {
 	 * @returns Hex-encoded hash string
 	 */
 	computeFileHash(path: string): Promise<string>;
+
+	/**
+	 * Compute a SHA-1 hash of a file.
+	 *
+	 * @param path - Path to the file
+	 * @returns Hex-encoded hash string
+	 */
+	computeFileSha1(path: string): Promise<string>;
 }

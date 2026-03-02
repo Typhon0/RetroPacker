@@ -54,6 +54,9 @@ function createMockFileSystem(
 		async computeFileHash() {
 			return "";
 		},
+		async computeFileSha1() {
+			return "";
+		},
 		...overrides,
 	};
 }
@@ -132,7 +135,7 @@ describe("M3uGeneratorService.groupByDisc", () => {
 			"Game (Disc 2).chd",
 		];
 		const groups = M3uGeneratorService.groupByDisc(filenames);
-		const entries = groups.get("Game")?.entries;
+		const entries = groups.get("Game")?.entries ?? [];
 		expect(entries[0].discNumber).toBe(1);
 		expect(entries[1].discNumber).toBe(2);
 		expect(entries[2].discNumber).toBe(3);

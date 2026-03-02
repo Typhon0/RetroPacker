@@ -49,6 +49,8 @@ export class JobState {
 	readonly gameId: Signal<string | undefined>;
 	readonly gameTitle: Signal<string | undefined>;
 	readonly region: Signal<string | undefined>;
+	readonly dataSha1: Signal<string | undefined>;
+	readonly verifiedName: Signal<string | undefined>;
 	readonly indeterminate: Signal<boolean>;
 
 	readonly isProcessing: ReadonlySignal<boolean>;
@@ -85,6 +87,8 @@ export class JobState {
 		this.gameId = signal(props.gameId);
 		this.gameTitle = signal(props.gameTitle);
 		this.region = signal(props.region);
+		this.dataSha1 = signal(props.dataSha1);
+		this.verifiedName = signal(props.verifiedName);
 		this.indeterminate = signal(false);
 
 		this.isProcessing = computed(() => this.status.value === "processing");
@@ -164,6 +168,9 @@ export class JobState {
 		this.endTime.value = undefined;
 		this.compressionRatio.value = undefined;
 		this.indeterminate.value = false;
+		this.dataSha1.value = undefined;
+		this.verifiedName.value = undefined;
+		this.verificationResult.value = undefined;
 		this.clearLogs();
 	}
 
@@ -205,6 +212,9 @@ export class JobState {
 		if ("gameId" in updates) this.gameId.value = updates.gameId;
 		if ("gameTitle" in updates) this.gameTitle.value = updates.gameTitle;
 		if ("region" in updates) this.region.value = updates.region;
+		if ("dataSha1" in updates) this.dataSha1.value = updates.dataSha1;
+		if ("verifiedName" in updates)
+			this.verifiedName.value = updates.verifiedName;
 	}
 
 	toJobProps(): JobProps {
@@ -239,6 +249,8 @@ export class JobState {
 			gameId: this.gameId.value,
 			gameTitle: this.gameTitle.value,
 			region: this.region.value,
+			dataSha1: this.dataSha1.value,
+			verifiedName: this.verifiedName.value,
 		};
 	}
 

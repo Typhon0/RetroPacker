@@ -10,11 +10,14 @@
 import {
 	AlertCircle,
 	AlertTriangle,
+	BadgeCheck,
 	CheckCircle,
 	FolderOpen,
 	Link2,
 	Play,
 	PlayCircle,
+	ShieldCheck,
+	ShieldX,
 	Trash2,
 	XCircle,
 } from "lucide-react";
@@ -62,18 +65,52 @@ const PLATFORM_OVERRIDE_OPTIONS: ReadonlyArray<{
 	{ value: "wii", label: "Wii" },
 ];
 
-function getStatusIcon(status: string): React.ReactNode {
-	switch (status) {
-		case "completed":
-			return <CheckCircle className="h-4 w-4 text-green-500" />;
-		case "processing":
-			return <PlayCircle className="h-4 w-4 text-blue-500 animate-pulse" />;
-		case "failed":
-			return <AlertCircle className="h-4 w-4 text-red-500" />;
-		default:
-			return <div className="h-4 w-4 rounded-full border-2 border-muted" />;
+const JobStatusIcon = React.memo(({ job }: { job: JobState }) => {
+	const status = useSignalValue(job.status);
+	const dataSha1 = useSignalValue(job.dataSha1);
+	const verifiedName = useSignalValue(job.verifiedName);
+	const verificationResult = useSignalValue(job.verificationResult);
+
+	if (status === "processing") {
+		return <PlayCircle className="h-4 w-4 text-blue-500 animate-pulse" />;
 	}
-}
+	if (job.workflow === "verify") {
+		if (status === "failed" || verificationResult === "fail") {
+			const tooltip = dataSha1
+				? "Verification failed. Hash does not match database."
+				: "Verification failed. Archive may be corrupted.";
+			return (
+				<div title={tooltip}>
+					<ShieldX className="h-4 w-4 text-red-500" />
+				</div>
+			);
+		}
+		if (status === "completed") {
+			if (verifiedName) {
+				return (
+					<div title={`Perfect Dump: ${verifiedName}`}>
+						<BadgeCheck className="h-4 w-4 text-emerald-500" />
+					</div>
+				);
+			}
+			const tooltip = dataSha1
+				? "Verified archive. Hash not found in database."
+				: "Verified archive. Database match requires SHA-1.";
+			return (
+				<div title={tooltip}>
+					<ShieldCheck className="h-4 w-4 text-sky-500" />
+				</div>
+			);
+		}
+	}
+	if (status === "failed") {
+		return <AlertCircle className="h-4 w-4 text-red-500" />;
+	}
+	if (status === "completed") {
+		return <CheckCircle className="h-4 w-4 text-green-500" />;
+	}
+	return <div className="h-4 w-4 rounded-full border-2 border-muted" />;
+});
 
 function formatSize(bytes: number): string {
 	if (bytes <= 0) return "Unknown";
@@ -254,7 +291,7 @@ const JobRowComponent = ({
 					{isUnknownBlocked ? (
 						<AlertTriangle className="h-4 w-4 text-amber-500" />
 					) : (
-						getStatusIcon(status)
+						<JobStatusIcon job={job} />
 					)}
 					<CoverThumbnail system={system} size="sm" />
 				</div>

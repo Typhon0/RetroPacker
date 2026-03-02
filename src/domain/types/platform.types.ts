@@ -66,6 +66,14 @@ export function isNintendoSystem(system: DetectedSystem | string): boolean {
 }
 
 /**
+ * Check if a detected system is a PlayStation platform.
+ */
+export function isPlayStationSystem(system: DetectedSystem | string): boolean {
+	const normalized = system.toLowerCase();
+	return normalized === "ps1" || normalized === "ps2" || normalized === "psp";
+}
+
+/**
  * Check if a detected system is a Sega platform.
  */
 export function isSegaPlatform(system: DetectedSystem | string): boolean {
@@ -75,6 +83,27 @@ export function isSegaPlatform(system: DetectedSystem | string): boolean {
 		normalized === "dreamcast" ||
 		normalized === "segacd"
 	);
+}
+
+/**
+ * Check if a detected system should use CD tooling strategy.
+ */
+export function isCdSystem(system: DetectedSystem | string): boolean {
+	const normalized = system.toLowerCase();
+	return (
+		normalized === "ps1" ||
+		normalized === "saturn" ||
+		normalized === "dreamcast" ||
+		normalized === "segacd"
+	);
+}
+
+/**
+ * Check if a detected system should use DVD tooling strategy.
+ */
+export function isDvdSystem(system: DetectedSystem | string): boolean {
+	const normalized = system.toLowerCase();
+	return normalized === "ps2" || normalized === "psp";
 }
 
 /**

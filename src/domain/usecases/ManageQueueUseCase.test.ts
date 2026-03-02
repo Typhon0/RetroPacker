@@ -73,6 +73,14 @@ describe("ManageQueueUseCase", () => {
 			expect(WORKFLOW_FILE_CONFIGS.compress.extensions).toContain("gdi");
 		});
 
+		it("verify aligns extension coverage and user-facing text for verifiable formats", () => {
+			expect(WORKFLOW_FILE_CONFIGS.verify.extensions).toContain("iso");
+			expect(WORKFLOW_FILE_CONFIGS.verify.extensions).toContain("bin");
+			expect(WORKFLOW_FILE_CONFIGS.verify.filterName).toBe("Verifiable Files");
+			expect(WORKFLOW_FILE_CONFIGS.verify.supportedText).toContain(".iso");
+			expect(WORKFLOW_FILE_CONFIGS.verify.supportedText).toContain(".bin");
+		});
+
 		it("extract supports compressed formats", () => {
 			expect(WORKFLOW_FILE_CONFIGS.extract.extensions).toContain("chd");
 			expect(WORKFLOW_FILE_CONFIGS.extract.extensions).toContain("rvz");

@@ -32,6 +32,8 @@ export interface JobProps {
 	readonly gameId?: string;
 	readonly gameTitle?: string;
 	readonly region?: string;
+	readonly dataSha1?: string;
+	readonly verifiedName?: string;
 }
 
 /**

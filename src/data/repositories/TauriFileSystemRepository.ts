@@ -16,6 +16,7 @@ import {
 	stat,
 	writeTextFile,
 } from "@tauri-apps/plugin-fs";
+import { platform } from "@tauri-apps/plugin-os";
 import { Command } from "@tauri-apps/plugin-shell";
 import type {
 	DirectoryEntry,
@@ -120,7 +121,6 @@ export class TauriFileSystemRepository implements IFileSystemRepository {
 	 */
 	async moveToTrash(filePath: string): Promise<boolean> {
 		try {
-			const { platform } = await import("@tauri-apps/plugin-os");
 			const os = platform();
 
 			let command: ReturnType<typeof Command.create>;
@@ -198,5 +198,12 @@ Add-Type -AssemblyName Microsoft.VisualBasic
 	 */
 	async computeFileHash(path: string): Promise<string> {
 		return invoke<string>("compute_file_hash", { path });
+	}
+
+	/**
+	 * Compute SHA-1 hash of a file via Rust backend command.
+	 */
+	async computeFileSha1(path: string): Promise<string> {
+		return invoke<string>("compute_file_sha1", { path });
 	}
 }

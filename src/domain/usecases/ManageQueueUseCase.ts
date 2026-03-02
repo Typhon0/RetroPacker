@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import type { JobProps } from "../entities/Job";
 import type { IFileSystemRepository } from "../repositories/IFileSystemRepository";
 import type { IJobRepository } from "../repositories/IJobRepository";
+import { isCdSystem } from "../types/platform.types";
 import type {
 	CompressionStrategy,
 	WorkflowType,
@@ -92,10 +93,10 @@ export const WORKFLOW_FILE_CONFIGS: Record<WorkflowType, WorkflowFileConfig> = {
 		supportedText: ".chd, .rvz, .gcz, .wbfs, .wia",
 	},
 	verify: {
-		extensions: ["chd", "rvz", "gcz", "wbfs", "gcm", "wia"],
-		filterName: "Compressed Files",
+		extensions: ["chd", "rvz", "gcz", "wbfs", "gcm", "wia", "iso", "bin"],
+		filterName: "Verifiable Files",
 		dropLabel: "Drop files to verify integrity",
-		supportedText: ".chd, .rvz, .gcz, .wbfs, .gcm, .wia",
+		supportedText: ".chd, .rvz, .gcz, .wbfs, .gcm, .wia, .iso, .bin",
 	},
 	info: {
 		extensions: [
@@ -529,13 +530,7 @@ export class ManageQueueUseCase {
 		const ext = filePath.split(".").pop()?.toLowerCase();
 
 		// CD-based platforms always use createcd
-		const lowerSystem = system?.toLowerCase() ?? "";
-		if (
-			lowerSystem === "ps1" ||
-			lowerSystem === "saturn" ||
-			lowerSystem === "dreamcast" ||
-			lowerSystem === "segacd"
-		) {
+		if (system && isCdSystem(system)) {
 			return "createcd";
 		}
 

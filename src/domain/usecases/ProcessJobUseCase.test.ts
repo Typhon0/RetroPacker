@@ -118,6 +118,9 @@ const baseFileSystem: IFileSystemRepository = {
 	async computeFileHash() {
 		return "";
 	},
+	async computeFileSha1() {
+		return "";
+	},
 };
 
 function createNotificationServiceSpy(): {
@@ -442,7 +445,9 @@ describe("ProcessJobUseCase endTime", () => {
 		await vi.waitFor(() => expect(job.status.value).toBe("failed"));
 
 		expect(job.endTime.value).toBeDefined();
-		expect(job.errorMessage.value).toBe("Exited with code 1");
+		expect(job.errorMessage.value).toBe(
+			"Non-Zero Exit: Process failed with code 1. Check logs for details.",
+		);
 		job.dispose();
 	});
 });
@@ -641,6 +646,28 @@ describe("ProcessJobUseCase tool selection", () => {
 		expect(spawnedBinary()).toBe("DolphinTool");
 		job.dispose();
 	});
+
+	it("uses DolphinTool for .wia verify with unknown system when platformOverride is wii", async () => {
+		const job = createJob("verify-wia-override-wii", {
+			system: "Unknown",
+			path: "/roms/game.wia",
+			filename: "game.wia",
+			platformOverride: "wii",
+		});
+		const { executor, spawnedBinary } = createCapturingExecutor();
+
+		const useCase = new ProcessJobUseCase({
+			commandExecutor: executor,
+			notificationService: createNotificationServiceSpy().service,
+			fileSystem: baseFileSystem,
+		});
+
+		await useCase.execute(job, "/output", "verify", settings);
+		await vi.waitFor(() => expect(job.status.value).toBe("completed"));
+
+		expect(spawnedBinary()).toBe("DolphinTool");
+		job.dispose();
+	});
 });
 
 // ─── Arg building ────────────────────────────────────────────
@@ -806,7 +833,9 @@ describe("ProcessJobUseCase failures", () => {
 		await useCase.execute(job, "/output", "compress", settings);
 		await vi.waitFor(() => expect(job.status.value).toBe("failed"));
 
-		expect(job.errorMessage.value).toBe("Exited with code 42");
+		expect(job.errorMessage.value).toBe(
+			"Non-Zero Exit: Process failed with code 42. Check logs for details.",
+		);
 		job.dispose();
 	});
 
@@ -850,7 +879,9 @@ describe("ProcessJobUseCase failures", () => {
 		await useCase.execute(job, "/output", "compress", settings);
 
 		expect(job.status.value).toBe("failed");
-		expect(job.errorMessage.value).toBe("Permission denied");
+		expect(job.errorMessage.value).toBe(
+			"Permission Denied: Lacking rights to execute the sidecar binary.",
+		);
 		job.dispose();
 	});
 });

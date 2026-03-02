@@ -169,6 +169,7 @@ describe("JobState", () => {
 				system: "Wii",
 				endTime: 9999,
 				gameId: "GALE01",
+				verificationResult: "pass",
 			});
 
 			expect(job.status.value).toBe("completed");
@@ -176,6 +177,7 @@ describe("JobState", () => {
 			expect(job.system.value).toBe("Wii");
 			expect(job.endTime.value).toBe(9999);
 			expect(job.gameId.value).toBe("GALE01");
+			expect(job.verificationResult.value).toBe("pass");
 		});
 	});
 

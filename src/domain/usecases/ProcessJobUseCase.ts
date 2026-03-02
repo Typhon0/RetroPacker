@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { CueProcessorService } from "@/services/CueProcessorService";
 import { ProcessRegistry } from "@/services/ProcessRegistry";
 import type { JobState } from "../entities/JobState";
@@ -7,7 +8,11 @@ import type {
 } from "../repositories/ICommandExecutor";
 import type { IFileSystemRepository } from "../repositories/IFileSystemRepository";
 import type { INotificationService } from "../repositories/INotificationService";
-import { isNintendoSystem } from "../types/platform.types";
+import {
+	isDvdSystem,
+	isNintendoPlatform,
+	isNintendoSystem,
+} from "../types/platform.types";
 import {
 	type ChdSettings,
 	type CompressionPreset,
@@ -187,12 +192,76 @@ export class ProcessJobUseCase {
 			job.setStartTime(Date.now());
 			job.setEtaSeconds(undefined);
 			job.setCompressionRatio(undefined);
+			if (workflow === "verify") {
+				job.applyUpdates({
+					dataSha1: undefined,
+					verifiedName: undefined,
+					verificationResult: undefined,
+				});
+			}
 			const emitProgress = this.createProgressEmitter(job);
 
 			// Determine which tool to use
-			const usesDolphin = this.shouldUseDolphin(job);
-			this.validateWorkflowSupport(workflow, ext, usesDolphin);
-			const binary = usesDolphin ? "DolphinTool" : "chdman";
+			let usesDolphin = false;
+			let isRawHash = false;
+			let binary: "chdman" | "DolphinTool" = "chdman";
+
+			if (workflow === "verify" && (ext === "iso" || ext === "bin")) {
+				isRawHash = true;
+			} else {
+				usesDolphin = this.shouldUseDolphin(job);
+				this.validateWorkflowSupport(workflow, ext, usesDolphin);
+				binary = usesDolphin ? "DolphinTool" : "chdman";
+			}
+
+			// Raw hash workflow uses Tauri IPC, bypassing sidecar spawning
+			if (isRawHash) {
+				job.indeterminate.value = true;
+				job.appendLog("Verification tool: Raw SHA-1 (Tauri)");
+				job.appendLog(`Computing raw SHA-1 for ${job.filename}...`);
+
+				try {
+					const sha1 = await invoke<string>("compute_file_sha1", {
+						path: job.path,
+					});
+					job.applyUpdates({ dataSha1: sha1 });
+					job.appendLog(`Raw SHA-1: ${sha1}`);
+
+					job.appendLog("Checking database for SHA-1...");
+					const verifiedName = await invoke<string | null>("check_hash", {
+						sha1,
+					});
+					if (verifiedName) {
+						job.applyUpdates({ verifiedName });
+						job.appendLog(`Verified against database: ${verifiedName}`);
+					} else {
+						job.appendLog("Hash not found in database.");
+					}
+					job.applyUpdates({ verificationResult: "pass" });
+
+					job.setStatus("completed");
+					job.updateProgress(100, 0);
+				} catch (err) {
+					job.applyUpdates({ verificationResult: "fail" });
+					job.setStatus("failed");
+					job.setErrorMessage(ProcessJobUseCase.formatSidecarError(err));
+				} finally {
+					job.endTime.value = Date.now();
+					await cleanupTempDir();
+					cleanup();
+				}
+				return;
+			}
+
+			if (workflow === "verify" && usesDolphin) {
+				const algo = settings.dolphin.verifyAlgorithm.toUpperCase();
+				job.appendLog(`Verification hash: ${algo}`);
+				if (settings.dolphin.verifyAlgorithm !== "sha1") {
+					job.appendLog(
+						"Database check skipped (enable SHA-1 to verify against Redump/No-Intro).",
+					);
+				}
+			}
 
 			// Smart CUE preprocessing (chdman compress only)
 			let overrideInputPath: string | undefined;
@@ -249,6 +318,9 @@ export class ProcessJobUseCase {
 				}
 			}
 
+			if (workflow === "verify") {
+				job.appendLog(`Verification tool: ${binary}`);
+			}
 			job.appendLog(`Starting: ${binary} ${args.join(" ")}`);
 
 			// Set up indeterminate progress for DolphinTool (doesn't output progress)
@@ -259,6 +331,43 @@ export class ProcessJobUseCase {
 			const callbacks: CommandCallbacks = {
 				onStdout: (line) => {
 					job.appendLog(line);
+
+					if (
+						workflow === "verify" &&
+						(!usesDolphin || settings.dolphin.verifyAlgorithm === "sha1")
+					) {
+						const sha1Match =
+							line.match(/(?:Data )?SHA1:\s*([a-fA-F0-9]{40})/i) ??
+							line.match(/(?:^|\s)([a-fA-F0-9]{40})(?:\s|$)/);
+						if (sha1Match && !job.dataSha1.value) {
+							const sha1 = sha1Match[1].toUpperCase();
+							job.applyUpdates({ dataSha1: sha1 });
+							job.appendLog("Checking database for SHA-1...");
+							void invoke<string | null>("check_hash", { sha1 })
+								.then((verifiedName: string | null) => {
+									if (verifiedName) {
+										job.applyUpdates({ verifiedName });
+										job.appendLog(`Verified against database: ${verifiedName}`);
+									} else {
+										job.appendLog("Hash not found in database.");
+									}
+								})
+								.catch((err: unknown) => {
+									console.error("Failed to check hash:", err);
+								});
+						}
+					}
+
+					if (workflow === "verify" && usesDolphin) {
+						const problemsMatch = line.match(/Problems Found:\s*(Yes|No)/i);
+						if (problemsMatch) {
+							job.applyUpdates({
+								verificationResult:
+									problemsMatch[1].toLowerCase() === "no" ? "pass" : "fail",
+							});
+						}
+					}
+
 					if (!usesDolphin) {
 						this.parseProgress(line, job, emitProgress);
 					} else if (workflow === "info") {
@@ -293,6 +402,12 @@ export class ProcessJobUseCase {
 								job.setErrorMessage(undefined);
 								job.updateProgress(100, 0);
 								job.endTime.value = Date.now();
+								if (
+									workflow === "verify" &&
+									job.verificationResult.value !== "fail"
+								) {
+									job.applyUpdates({ verificationResult: "pass" });
+								}
 
 								// Delete source file if setting is enabled (compress/extract only)
 								if (
@@ -333,6 +448,9 @@ export class ProcessJobUseCase {
 									result.code ?? undefined,
 								);
 								job.setErrorMessage(friendlyMsg);
+								if (workflow === "verify") {
+									job.applyUpdates({ verificationResult: "fail" });
+								}
 								job.endTime.value = Date.now();
 							}
 						} catch (error) {
@@ -372,6 +490,9 @@ export class ProcessJobUseCase {
 							);
 							job.setStatus("failed");
 							job.setErrorMessage(friendlyMsg);
+							if (workflow === "verify") {
+								job.applyUpdates({ verificationResult: "fail" });
+							}
 							job.endTime.value = Date.now();
 						} catch (handlerError) {
 							console.error(
@@ -452,13 +573,13 @@ export class ProcessJobUseCase {
 		}
 
 		// Check override
-		if (override === "gamecube" || override === "wii") {
+		if (isNintendoPlatform(override)) {
 			return true;
 		}
 
 		// Check file extension
 		const ext = job.path.split(".").pop()?.toLowerCase();
-		if (ext && ["gcm", "wbfs", "rvz", "gcz"].includes(ext)) {
+		if (ext && ["gcm", "wbfs", "rvz", "gcz", "wia"].includes(ext)) {
 			return true;
 		}
 
@@ -509,9 +630,9 @@ export class ProcessJobUseCase {
 			job.system.value.toLowerCase();
 
 		// Determine strict CD vs DVD strategy based on effective system
-		const isDvdSystem = effectiveSystem === "ps2" || effectiveSystem === "psp";
-		const compressCmd = isDvdSystem ? "createdvd" : "createcd";
-		const extractCmd = isDvdSystem ? "extractdvd" : "extractcd";
+		const usesDvdStrategy = isDvdSystem(effectiveSystem);
+		const compressCmd = usesDvdStrategy ? "createdvd" : "createcd";
+		const extractCmd = usesDvdStrategy ? "extractdvd" : "extractcd";
 
 		if (workflow === "compress") {
 			const outputPath = await fileSystem.joinPath(
@@ -530,7 +651,7 @@ export class ProcessJobUseCase {
 			// Hunk size
 			if (chd.hunkSize) {
 				args.push("-hs", chd.hunkSize.toString());
-			} else if (isDvdSystem) {
+			} else if (usesDvdStrategy) {
 				args.push("-hs", "2048"); // Strict 2048 for DVD systems
 			}
 
@@ -688,7 +809,9 @@ export class ProcessJobUseCase {
 		}
 
 		if (workflow === "verify") {
-			const supported = usesDolphin ? ["rvz", "gcz", "wbfs", "gcm"] : ["chd"];
+			const supported = usesDolphin
+				? ["rvz", "gcz", "wbfs", "gcm", "wia"]
+				: ["chd"];
 			if (!supported.includes(ext)) {
 				throw new Error(
 					`Unsupported verify input format: .${ext || "unknown"}`,

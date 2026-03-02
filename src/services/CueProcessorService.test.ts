@@ -57,6 +57,9 @@ function createMockFileSystem(
 		async computeFileHash() {
 			return "";
 		},
+		async computeFileSha1() {
+			return "";
+		},
 		...overrides,
 	};
 }

@@ -1,8 +1,19 @@
+import { invoke } from "@tauri-apps/api/core";
 import { appDataDir } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import { openPath } from "@tauri-apps/plugin-opener";
-import { Download, Folder, FolderOpen, Settings, X } from "lucide-react";
+import {
+	Database,
+	Download,
+	Folder,
+	FolderOpen,
+	RefreshCw,
+	Settings,
+	Upload,
+	X,
+} from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -22,6 +33,118 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { jobStore } from "@/stores/JobStore";
 import { usePackerStore } from "@/stores/usePackerStore";
+
+function DatabaseManagerTab() {
+	const [stats, setStats] = useState<{
+		row_count: number;
+		last_updated: string;
+	} | null>(null);
+	const [isSyncing, setIsSyncing] = useState(false);
+	const [isImporting, setIsImporting] = useState(false);
+
+	const fetchStats = useCallback(async () => {
+		try {
+			const dbStats = await invoke<{
+				row_count: number;
+				last_updated: string;
+			}>("get_db_stats");
+			setStats(dbStats);
+		} catch (e) {
+			console.error("Failed to fetch DB stats:", e);
+		}
+	}, []);
+
+	useEffect(() => {
+		fetchStats();
+	}, [fetchStats]);
+
+	const handleSync = async () => {
+		try {
+			setIsSyncing(true);
+			await invoke("sync_online_databases");
+			await fetchStats();
+		} catch (e) {
+			console.error("Failed to sync databases:", e);
+		} finally {
+			setIsSyncing(false);
+		}
+	};
+
+	const handleImport = async () => {
+		try {
+			const selected = await open({
+				multiple: false,
+				filters: [{ name: "DAT Files", extensions: ["dat", "xml"] }],
+			});
+			if (selected && typeof selected === "string") {
+				setIsImporting(true);
+				await invoke("import_dat_file", { path: selected });
+				await fetchStats();
+			}
+		} catch (e) {
+			console.error("Failed to import DAT file:", e);
+		} finally {
+			setIsImporting(false);
+		}
+	};
+
+	return (
+		<div className="space-y-6">
+			<div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg border">
+				<div className="flex items-center gap-3">
+					<div className="p-2 bg-primary/10 rounded-full text-primary">
+						<Database className="h-5 w-5" />
+					</div>
+					<div>
+						<h4 className="font-medium">Redump & No-Intro Database</h4>
+						<p className="text-xs text-muted-foreground">
+							{stats?.row_count
+								? `${stats.row_count.toLocaleString()} signatures loaded`
+								: "No signatures loaded"}
+						</p>
+					</div>
+				</div>
+				<div className="flex items-center gap-2">
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={handleImport}
+						disabled={isImporting || isSyncing}
+						className="gap-2"
+					>
+						<Upload className="h-4 w-4" />
+						{isImporting ? "Importing..." : "Import DAT"}
+					</Button>
+					<Button
+						variant="default"
+						size="sm"
+						onClick={handleSync}
+						disabled={isSyncing || isImporting}
+						className="gap-2"
+					>
+						<RefreshCw
+							className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`}
+						/>
+						{isSyncing ? "Syncing..." : "Auto Sync"}
+					</Button>
+				</div>
+			</div>
+
+			<div className="text-sm text-muted-foreground space-y-2">
+				<p>
+					The local signature database is used during the{" "}
+					<strong>Verify</strong> workflow to guarantee data integrity (1:1
+					perfect rip).
+				</p>
+				<p>
+					You can sync automatically from GitHub (libretro-database), or
+					download specific <code>.dat</code> files from Redump/No-Intro and
+					import them manually.
+				</p>
+			</div>
+		</div>
+	);
+}
 
 export function GlobalSettings() {
 	const {
@@ -116,9 +239,10 @@ export function GlobalSettings() {
 
 				<div className="py-2">
 					<Tabs defaultValue="general" className="w-full">
-						<TabsList className="w-full grid grid-cols-3">
+						<TabsList className="w-full grid grid-cols-4">
 							<TabsTrigger value="general">General</TabsTrigger>
 							<TabsTrigger value="compression">Compression Engines</TabsTrigger>
+							<TabsTrigger value="databases">Databases</TabsTrigger>
 							<TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
 						</TabsList>
 
@@ -204,8 +328,8 @@ export function GlobalSettings() {
 								</TabsList>
 
 								<p className="text-xs text-muted-foreground mt-2 mb-4">
-									These settings apply when the <b>Compress</b> workflow is
-									active.
+									Compression settings apply to <b>Compress</b>. Verification
+									hash settings apply to <b>Verify</b>.
 								</p>
 
 								<TabsContent
@@ -331,8 +455,42 @@ export function GlobalSettings() {
 											Larger blocks compress better but seek slower.
 										</span>
 									</div>
+									<div className="grid gap-2">
+										<span className="text-sm font-medium">Verify Hash</span>
+										<Select
+											value={dolphin.verifyAlgorithm}
+											onValueChange={(val) =>
+												setDolphinSetting(
+													"verifyAlgorithm",
+													val as "md5" | "sha1" | "crc32",
+												)
+											}
+										>
+											<SelectTrigger className="h-8 w-full">
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="sha1">
+													SHA-1 (Database Verification)
+												</SelectItem>
+												<SelectItem value="md5">MD5</SelectItem>
+												<SelectItem value="crc32">CRC32</SelectItem>
+											</SelectContent>
+										</Select>
+										<span className="text-[10px] text-muted-foreground">
+											SHA-1 is required to verify against Redump/No-Intro.
+										</span>
+									</div>
 								</TabsContent>
 							</Tabs>
+						</TabsContent>
+
+						{/* Databases Tab */}
+						<TabsContent
+							value="databases"
+							className="p-4 border rounded-md mt-2 space-y-4 min-h-[300px]"
+						>
+							<DatabaseManagerTab />
 						</TabsContent>
 
 						{/* Diagnostics Tab */}

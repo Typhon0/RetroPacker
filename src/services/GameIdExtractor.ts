@@ -1,4 +1,8 @@
 import { open, type SeekMode } from "@tauri-apps/plugin-fs";
+import {
+	isNintendoSystem,
+	isPlayStationSystem,
+} from "@/domain/types/platform.types";
 import { BinaryManagerService } from "./BinaryManagerService";
 
 type ReadableHandle = {
@@ -25,10 +29,10 @@ export class GameIdExtractor {
 			return toolId;
 		}
 
-		if (system === "GameCube" || system === "Wii") {
+		if (isNintendoSystem(system)) {
 			return GameIdExtractor.extractNintendoGameId(filePath);
 		}
-		if (system === "PSP") {
+		if (isPlayStationSystem(system) && system.toLowerCase() === "psp") {
 			return GameIdExtractor.extractPSPGameId(filePath);
 		}
 		return GameIdExtractor.extractPSGameId(filePath);
@@ -47,7 +51,7 @@ export class GameIdExtractor {
 			return GameIdExtractor.parseChdInfo(filePath);
 		}
 
-		if (system === "GameCube" || system === "Wii") {
+		if (isNintendoSystem(system)) {
 			if (["rvz", "gcz", "wbfs", "iso", "ciso"].includes(ext || "")) {
 				return GameIdExtractor.parseDolphinHeader(filePath);
 			}

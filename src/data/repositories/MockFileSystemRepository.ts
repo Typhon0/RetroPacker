@@ -124,4 +124,11 @@ export class MockFileSystemRepository implements IFileSystemRepository {
 	async computeFileHash(_path: string): Promise<string> {
 		return `mock_sha256_${Math.random().toString(36).substring(2, 18)}`;
 	}
+
+	/**
+	 * Return a mock SHA-1 hash.
+	 */
+	async computeFileSha1(_path: string): Promise<string> {
+		return `mock_sha1_${Math.random().toString(36).substring(2, 18)}`;
+	}
 }

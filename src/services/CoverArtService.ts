@@ -2,6 +2,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { appDataDir, dirname, join } from "@tauri-apps/api/path";
 import { exists, mkdir } from "@tauri-apps/plugin-fs";
 import { fetch } from "@tauri-apps/plugin-http";
+import { isDvdSystem, isNintendoSystem } from "@/domain/types/platform.types";
 
 class AsyncLimiter {
 	private active = 0;
@@ -108,13 +109,7 @@ export class CoverArtService {
 			}
 
 			// 3. Scrape fallback (heavy — stays last)
-			if (
-				gameId &&
-				(system === "Wii" ||
-					system === "GameCube" ||
-					system === "PS2" ||
-					system === "PSP")
-			) {
+			if (gameId && (isNintendoSystem(system) || isDvdSystem(system))) {
 				const scraped = await CoverArtService.scrapeGameTDB(gameId, system);
 				if (scraped) {
 					CoverArtService.coverCache.set(cacheKey, scraped);
@@ -252,7 +247,7 @@ export class CoverArtService {
 		system: string,
 	): Promise<string | null> {
 		try {
-			const platform = system === "GameCube" ? "Wii" : system;
+			const platform = isNintendoSystem(system) ? "Wii" : system;
 			const url = `https://www.gametdb.com/${platform}/${gameId}`;
 
 			const response = await fetch(url, {

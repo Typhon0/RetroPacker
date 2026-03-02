@@ -31,4 +31,11 @@ tauri-plugin-fs = "2"
 tauri-plugin-os = "2"
 sha2 = "0.10"
 hex = "0.4"
+rusqlite = { version = "0.38.0", features = ["bundled"] }
+quick-xml = "0.39.2"
+sha1 = "0.10.6"
+reqwest = { version = "0.13.2", features = ["blocking"] }
+zip = "8.1.0"
+tokio = { version = "1.49.0", features = ["full"] }
+directories = "6.0.0"
 

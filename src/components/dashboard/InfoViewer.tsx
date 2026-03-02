@@ -15,6 +15,7 @@ import {
 import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { isNintendoSystem } from "@/domain/types/platform.types";
 import { BinaryManagerService } from "@/services/BinaryManagerService";
 import { CoverArtService } from "@/services/CoverArtService";
 import { GameIdExtractor } from "@/services/GameIdExtractor";
@@ -239,7 +240,7 @@ export function InfoViewer() {
 					}
 				} else if (
 					["rvz", "wbfs", "gcz", "gcm"].includes(extension || "") ||
-					(extension === "iso" && (system === "GameCube" || system === "Wii"))
+					(extension === "iso" && isNintendoSystem(system))
 				) {
 					try {
 						const command = BinaryManagerService.createCommand("dolphintool", [
@@ -327,7 +328,6 @@ export function InfoViewer() {
 			let filePath = file.path;
 
 			if (!filePath) {
-				// @ts-expect-error
 				const isTauri =
 					typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 				if (!isTauri) {
