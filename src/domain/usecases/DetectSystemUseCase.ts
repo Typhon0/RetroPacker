@@ -24,9 +24,13 @@ const ARCHIVE_EXTENSIONS = new Set(["zip", "7z", "rar"]);
 /** Extensions for compressed emulator formats needing CLI metadata extraction. */
 const CHD_EXTENSION = "chd";
 const DOLPHIN_EXTENSIONS = new Set(["rvz", "gcz", "wia", "wbfs"]);
+const DOLPHIN_FALLBACK_EXTENSIONS = new Set(["iso"]);
 
 /** Size of the binary header buffer to read (64 KB). */
 const HEADER_READ_SIZE = 65536;
+const DEEP_SCAN_MAX_BYTES = 2 * 1024 * 1024;
+const DEEP_SCAN_CHUNK_SIZE = 256 * 1024;
+const DEEP_SCAN_OVERLAP_BYTES = 64;
 const ISO_PRIMARY_VOLUME_DESCRIPTOR_OFFSET = 0x8000;
 const ISO_STANDARD_IDENTIFIER_OFFSET = ISO_PRIMARY_VOLUME_DESCRIPTOR_OFFSET + 1; // "CD001"
 const ISO_PLATFORM_SCAN_END_OFFSET = 0x9000;
@@ -38,6 +42,9 @@ const ISO_ROOT_DIRECTORY_READ_MAX_BYTES = 512 * 1024;
 const PS3_EBOOT_PATH_REGEX = /\/ps3_game\/usrdir\/eboot\.bin$/i;
 const SCE_EXEC_MAGIC = new Uint8Array([0x53, 0x43, 0x45, 0x00]); // "SCE\0"
 const ELF_EXEC_MAGIC = new Uint8Array([0x7f, 0x45, 0x4c, 0x46]); // "\x7FELF"
+const WII_DISC_MAGIC = new Uint8Array([0x5d, 0x1c, 0x9e, 0xa3]);
+const GAMECUBE_DISC_MAGIC = new Uint8Array([0xc2, 0x33, 0x9f, 0x3d]);
+const NINTENDO_GAME_ID_LENGTH = 6;
 
 /**
  * Magic byte signatures for 2048-byte/sector formats (DVD-based).
@@ -50,13 +57,13 @@ const TIER_A_SIGNATURES: ReadonlyArray<{
 	// Wii disc magic at offset 0x18
 	{
 		offset: 0x18,
-		bytes: new Uint8Array([0x5d, 0x1c, 0x9e, 0xa3]),
+		bytes: WII_DISC_MAGIC,
 		system: "Wii",
 	},
 	// GameCube disc magic at offset 0x1C
 	{
 		offset: 0x1c,
-		bytes: new Uint8Array([0xc2, 0x33, 0x9f, 0x3d]),
+		bytes: GAMECUBE_DISC_MAGIC,
 		system: "GameCube",
 	},
 	// PS2 DVD — "PLAYSTATION " at sector 16 + 16 bytes = 0x8010
@@ -79,8 +86,17 @@ const TIER_B_SIGNATURES: ReadonlyArray<{
 	{ offset: 0x9310, bytes: "PLAYSTATION ", system: "PS1" },
 ];
 
+const SHIFTED_NINTENDO_SIGNATURES: ReadonlyArray<{
+	offset: number;
+	bytes: Uint8Array;
+	system: DetectedSystem;
+}> = [
+	{ offset: 0x18, bytes: WII_DISC_MAGIC, system: "Wii" },
+	{ offset: 0x1c, bytes: GAMECUBE_DISC_MAGIC, system: "GameCube" },
+];
+
 /**
- * Regex-based path fallback patterns (Step 5).
+ * Regex-based path fallback patterns (Step 6).
  * Uses strict word boundaries to avoid false positives.
  */
 const PATH_REGEX_PATTERNS: ReadonlyArray<{
@@ -92,15 +108,26 @@ const PATH_REGEX_PATTERNS: ReadonlyArray<{
 	{ pattern: /\b(ps2|playstation.?2)\b/i, system: "PS2" },
 ];
 
+interface DetectionTrace {
+	readonly filePath: string;
+	readonly ext: string;
+	events: string[];
+}
+
+type TraceFlagHost = typeof globalThis & {
+	__RETROPACKER_DETECT_TRACE__?: unknown;
+};
+
 /**
  * Use Case: Detect System
  *
- * Detects the gaming platform from a file using a strict 5-step pipeline:
+ * Detects the gaming platform from a file using a strict 6-step pipeline:
  * 1. Reject unsupported archives (.zip, .7z, .rar)
  * 2. Extract platform from compressed emulator formats via CLI tools
  * 3. Pointer file resolution (.cue, .gdi, .ccd)
  * 4. 2-tier binary magic header scan (DVD 2048-byte + CD-ROM 2352-byte sectors)
- * 5. Safe regex fallback on file path
+ * 5. Deep-scan fallback for shifted Nintendo disc headers / DolphinTool fallback for .iso
+ * 6. Safe regex fallback on file path
  *
  * If no match is found, returns "Unknown" — NEVER defaults to a specific platform.
  */
@@ -109,100 +136,215 @@ export class DetectSystemUseCase {
 
 	/**
 	 * Detect the system from a file path.
-	 * Runs the full 5-step pipeline sequentially; halts on first match.
+	 * Runs the full 6-step pipeline sequentially; halts on first match.
 	 *
 	 * @param filePath - Absolute path to the file
 	 * @returns Detected system, or "Unknown" when unresolved
 	 */
 	async execute(filePath: string): Promise<DetectedSystem> {
 		const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+		const trace = this.createDetectionTrace(filePath, ext);
 
 		// ── Step 1: Reject unsupported archive formats ──────────────
 		if (ARCHIVE_EXTENSIONS.has(ext)) {
-			return "Unknown";
+			this.addTraceEvent(trace, `step1: archive=${ext}`);
+			return this.finishWithTrace(trace, "Unknown");
 		}
+		this.addTraceEvent(trace, "step1: archive=pass");
 
 		// Strict PS3 executable rejection:
 		// only when both path layout and executable header signature match.
 		if (ext === "bin" && (await this.isDefinitivePs3Executable(filePath))) {
-			return "Unsupported";
+			this.addTraceEvent(trace, "step1b: ps3-executable=matched");
+			return this.finishWithTrace(trace, "Unsupported");
 		}
+		this.addTraceEvent(trace, "step1b: ps3-executable=pass");
 
 		// ── Step 2: Extract platform from compressed emulator formats
 		//    These formats require CLI tools since we can't read raw
 		//    binary headers from compressed containers.
 		if (ext === CHD_EXTENSION) {
-			return this.detectFromChd(filePath);
+			const chdResult = await this.detectFromChd(filePath);
+			this.addTraceEvent(trace, `step2: chd=${chdResult}`);
+			return this.finishWithTrace(trace, chdResult);
 		}
 
 		if (DOLPHIN_EXTENSIONS.has(ext)) {
-			return this.detectFromDolphinFormat(filePath, ext);
+			const dolphinResult = await this.detectFromDolphinFormat(filePath, ext);
+			this.addTraceEvent(trace, `step2: dolphin-format=${dolphinResult}`);
+			return this.finishWithTrace(trace, dolphinResult);
 		}
 
 		// PSP compressed formats — always PSP
 		if (ext === "cso" || ext === "ciso") {
-			return "PSP";
+			this.addTraceEvent(trace, "step2: psp-compressed=matched");
+			return this.finishWithTrace(trace, "PSP");
 		}
 
 		// Switch — recognized but not processable by chdman/DolphinTool
 		if (ext === "nsp" || ext === "nsz" || ext === "xci") {
-			return "Switch";
+			this.addTraceEvent(trace, "step2: switch-container=matched");
+			return this.finishWithTrace(trace, "Switch");
 		}
+		this.addTraceEvent(trace, "step2: direct-format=none");
 
 		// ── Step 3: Pointer file resolution (.cue, .gdi, .ccd) ─────
 		const binaryTarget = await this.resolvePointerFile(filePath, ext);
 
 		// Null means the referenced binary file is missing on disk
 		if (binaryTarget === null) {
+			this.addTraceEvent(trace, "step3: pointer=missing-target");
 			if (ext === "cue") {
 				const cueFallback = await this.detectFromCueMetadata(filePath);
+				this.addTraceEvent(
+					trace,
+					`step3-fallback: cue-metadata=${cueFallback}`,
+				);
 				if (cueFallback !== "Unknown") {
-					return cueFallback;
+					return this.finishWithTrace(trace, cueFallback);
 				}
 			}
 
 			if (this.supportsCompanionCueFallback(ext)) {
 				const companionCueFallback =
 					await this.detectFromCompanionCueMetadata(filePath);
+				this.addTraceEvent(
+					trace,
+					`step3-fallback: companion-cue=${companionCueFallback}`,
+				);
 				if (companionCueFallback !== "Unknown") {
-					return companionCueFallback;
+					return this.finishWithTrace(trace, companionCueFallback);
 				}
 			}
-			return "Unknown";
+			return this.finishWithTrace(trace, "Unknown");
+		}
+
+		if (binaryTarget !== filePath) {
+			this.addTraceEvent(trace, "step3: pointer=resolved");
+		} else {
+			this.addTraceEvent(trace, "step3: pointer=not-applicable");
 		}
 
 		// ── Step 4: Binary magic header scan ────────────────────────
 		if (this.isBinaryFormat(ext) || binaryTarget !== filePath) {
 			const headerResult = await this.detectByMagicHeader(binaryTarget);
+			this.addTraceEvent(trace, `step4: magic=${headerResult}`);
 			if (headerResult !== "Unknown") {
-				return headerResult;
+				return this.finishWithTrace(trace, headerResult);
 			}
+
+			if (ext === "iso") {
+				const deepScanResult =
+					await this.detectShiftedNintendoDiscByDeepScan(binaryTarget);
+				this.addTraceEvent(trace, `step5: deep-scan=${deepScanResult}`);
+				if (deepScanResult !== "Unknown") {
+					return this.finishWithTrace(trace, deepScanResult);
+				}
+			}
+
+			if (DOLPHIN_FALLBACK_EXTENSIONS.has(ext)) {
+				const dolphinFallbackResult = await this.detectDolphinFallbackFormat(
+					binaryTarget,
+					ext,
+				);
+				this.addTraceEvent(
+					trace,
+					`step5: dolphin-fallback=${dolphinFallbackResult}`,
+				);
+				if (dolphinFallbackResult !== "Unknown") {
+					return this.finishWithTrace(trace, dolphinFallbackResult);
+				}
+			}
+		} else {
+			this.addTraceEvent(trace, "step4: magic=skipped");
 		}
 
 		// CUE + descriptor/data metadata fallback for cases where header
 		// signatures are absent.
 		if (ext === "cue") {
 			const cueFallback = await this.detectFromCueMetadata(filePath);
+			this.addTraceEvent(trace, `step5b: cue-metadata=${cueFallback}`);
 			if (cueFallback !== "Unknown") {
-				return cueFallback;
+				return this.finishWithTrace(trace, cueFallback);
 			}
 		}
 
 		if (this.supportsCompanionCueFallback(ext)) {
 			const companionCueFallback =
 				await this.detectFromCompanionCueMetadata(filePath);
+			this.addTraceEvent(
+				trace,
+				`step5b: companion-cue=${companionCueFallback}`,
+			);
 			if (companionCueFallback !== "Unknown") {
-				return companionCueFallback;
+				return this.finishWithTrace(trace, companionCueFallback);
 			}
 		}
 
-		// ── Step 5: Safe regex fallback on file path ────────────────
+		// ── Step 6: Safe regex fallback on file path ────────────────
 		const regexResult = this.detectByPathRegex(filePath);
+		this.addTraceEvent(trace, `step6: regex=${regexResult}`);
 		if (regexResult !== "Unknown") {
-			return regexResult;
+			return this.finishWithTrace(trace, regexResult);
 		}
 
-		return "Unknown";
+		return this.finishWithTrace(trace, "Unknown");
+	}
+
+	private createDetectionTrace(filePath: string, ext: string): DetectionTrace {
+		return {
+			filePath,
+			ext,
+			events: [],
+		};
+	}
+
+	private addTraceEvent(trace: DetectionTrace, event: string): void {
+		trace.events.push(event);
+	}
+
+	private finishWithTrace(
+		trace: DetectionTrace,
+		result: DetectedSystem,
+	): DetectedSystem {
+		this.logDetectionTrace(trace, result);
+		return result;
+	}
+
+	private logDetectionTrace(
+		trace: DetectionTrace,
+		result: DetectedSystem,
+	): void {
+		if (!this.isDetectionTraceEnabled()) {
+			return;
+		}
+
+		const extension = trace.ext || "(no-ext)";
+		const events =
+			trace.events.length > 0 ? trace.events.join(" | ") : "(no-events)";
+		console.debug(
+			`[DetectSystemUseCase][trace] ${trace.filePath} [${extension}] => ${result}; ${events}`,
+		);
+	}
+
+	private isDetectionTraceEnabled(): boolean {
+		const flag = (globalThis as TraceFlagHost).__RETROPACKER_DETECT_TRACE__;
+		if (typeof flag === "boolean") {
+			return flag;
+		}
+
+		if (typeof flag === "number") {
+			return flag === 1;
+		}
+
+		if (typeof flag === "string") {
+			const normalized = flag.trim().toLowerCase();
+			return (
+				normalized === "1" || normalized === "true" || normalized === "yes"
+			);
+		}
+
+		return false;
 	}
 
 	// ─── Step 2 Helpers ────────────────────────────────────────────
@@ -333,6 +475,118 @@ export class DetectSystemUseCase {
 		}
 
 		return "Unknown";
+	}
+
+	private async detectDolphinFallbackFormat(
+		filePath: string,
+		ext: string,
+	): Promise<DetectedSystem> {
+		return this.detectFromDolphinFormat(filePath, ext);
+	}
+
+	private async detectShiftedNintendoDiscByDeepScan(
+		filePath: string,
+	): Promise<DetectedSystem> {
+		const { fileSystem } = this.deps;
+		let cursor = Math.max(HEADER_READ_SIZE - DEEP_SCAN_OVERLAP_BYTES, 0);
+		let tail = new Uint8Array(0);
+
+		try {
+			while (cursor < DEEP_SCAN_MAX_BYTES) {
+				const readLength = Math.min(
+					DEEP_SCAN_CHUNK_SIZE,
+					DEEP_SCAN_MAX_BYTES - cursor,
+				);
+				const chunk = await fileSystem.readBytes(filePath, cursor, readLength);
+				if (chunk.length === 0) {
+					break;
+				}
+
+				const scanBuffer = this.concatBytes(tail, chunk);
+				const system = this.detectShiftedNintendoSignature(scanBuffer);
+				if (system !== "Unknown") {
+					return system;
+				}
+
+				tail =
+					scanBuffer.length > DEEP_SCAN_OVERLAP_BYTES
+						? scanBuffer.slice(scanBuffer.length - DEEP_SCAN_OVERLAP_BYTES)
+						: scanBuffer;
+				cursor += chunk.length;
+
+				if (chunk.length < readLength) {
+					break;
+				}
+			}
+		} catch (e) {
+			console.warn(
+				`[DetectSystemUseCase] Deep scan failed for ${filePath}:`,
+				e,
+			);
+		}
+
+		return "Unknown";
+	}
+
+	private detectShiftedNintendoSignature(buffer: Uint8Array): DetectedSystem {
+		for (const signature of SHIFTED_NINTENDO_SIGNATURES) {
+			if (
+				this.hasSignatureWithLikelyNintendoHeader(
+					buffer,
+					signature.offset,
+					signature.bytes,
+				)
+			) {
+				return signature.system;
+			}
+		}
+
+		return "Unknown";
+	}
+
+	private hasSignatureWithLikelyNintendoHeader(
+		buffer: Uint8Array,
+		expectedOffset: number,
+		signature: Uint8Array,
+	): boolean {
+		const maxStart = buffer.length - signature.length;
+		for (let signatureStart = 0; signatureStart <= maxStart; signatureStart++) {
+			if (!this.matchSignature(buffer, signatureStart, signature)) {
+				continue;
+			}
+
+			const discHeaderStart = signatureStart - expectedOffset;
+			if (this.isLikelyNintendoGameId(buffer, discHeaderStart)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private isLikelyNintendoGameId(buffer: Uint8Array, offset: number): boolean {
+		if (offset < 0 || offset + NINTENDO_GAME_ID_LENGTH > buffer.length) {
+			return false;
+		}
+
+		for (let i = 0; i < NINTENDO_GAME_ID_LENGTH; i++) {
+			if (!this.isAsciiUpperOrDigit(buffer[offset + i])) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	private isAsciiUpperOrDigit(value: number): boolean {
+		return (value >= 0x30 && value <= 0x39) || (value >= 0x41 && value <= 0x5a);
+	}
+
+	private concatBytes(prefix: Uint8Array, suffix: Uint8Array): Uint8Array {
+		const out = new Uint8Array(prefix.length + suffix.length);
+		out.set(prefix, 0);
+		out.set(suffix, prefix.length);
+		return out;
 	}
 
 	// ─── Step 3: Pointer File Resolution ───────────────────────────

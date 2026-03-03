@@ -659,6 +659,100 @@ describe("DetectSystemUseCase — V3 Omni-Detection Pipeline", () => {
 			});
 			expect(await useCase.execute("/roms/game.iso")).toBe("PS2");
 		});
+
+		it("detects Wii from shifted Nintendo header via deep scan fallback", async () => {
+			const file = new Uint8Array(2 * 1024 * 1024);
+			const shiftedHeaderOffset = 98304;
+			const gameId = "RZDE01";
+
+			for (let i = 0; i < gameId.length; i++) {
+				file[shiftedHeaderOffset + i] = gameId.charCodeAt(i);
+			}
+
+			file.set([0x5d, 0x1c, 0x9e, 0xa3], shiftedHeaderOffset + 0x18);
+
+			const readBytes = vi
+				.fn()
+				.mockImplementation(
+					async (
+						_path: string,
+						offset = 0,
+						length = 65536,
+					): Promise<Uint8Array> => {
+						if (offset >= file.length) {
+							return new Uint8Array(0);
+						}
+
+						const end = Math.min(file.length, offset + length);
+						return file.slice(offset, end);
+					},
+				);
+
+			const { useCase } = createUseCase({
+				fileSystem: { readBytes },
+			});
+
+			expect(await useCase.execute("/roms/game.iso")).toBe("Wii");
+			expect(
+				readBytes.mock.calls.some(([, , length]) =>
+					typeof length === "number" ? length > 65536 : false,
+				),
+			).toBe(true);
+		});
+
+		it("does not deep-scan match shifted magic without Nintendo-style game ID", async () => {
+			const file = new Uint8Array(2 * 1024 * 1024);
+			const shiftedHeaderOffset = 98304;
+
+			for (let i = 0; i < 6; i++) {
+				file[shiftedHeaderOffset + i] = "_".charCodeAt(0);
+			}
+
+			file.set([0x5d, 0x1c, 0x9e, 0xa3], shiftedHeaderOffset + 0x18);
+
+			const readBytes = vi
+				.fn()
+				.mockImplementation(
+					async (
+						_path: string,
+						offset = 0,
+						length = 65536,
+					): Promise<Uint8Array> => {
+						if (offset >= file.length) {
+							return new Uint8Array(0);
+						}
+
+						const end = Math.min(file.length, offset + length);
+						return file.slice(offset, end);
+					},
+				);
+
+			const { useCase } = createUseCase({
+				fileSystem: { readBytes },
+			});
+
+			expect(await useCase.execute("/roms/game.iso")).toBe("Unknown");
+		});
+
+		it("uses DolphinTool fallback for .iso when binary scans fail", async () => {
+			const execute = vi.fn().mockResolvedValue({
+				code: 0,
+				signal: null,
+				stdout: "Game ID: RZDE01",
+				stderr: "",
+			});
+
+			const { useCase } = createUseCase({
+				commandExecutor: { execute },
+			});
+
+			expect(await useCase.execute("/roms/game.iso")).toBe("Wii");
+			expect(execute).toHaveBeenCalledWith("DolphinTool", [
+				"header",
+				"-i",
+				"/roms/game.iso",
+			]);
+		});
 	});
 
 	describe("Step 4: Tier B — CD-ROM formats (2352 bytes/sector)", () => {
@@ -717,9 +811,9 @@ describe("DetectSystemUseCase — V3 Omni-Detection Pipeline", () => {
 		});
 	});
 
-	// ─── Step 5: Regex fallback ───────────────────────────────────
+	// ─── Step 6: Regex fallback ───────────────────────────────────
 
-	describe("Step 5: Path regex fallback", () => {
+	describe("Step 6: Path regex fallback", () => {
 		it.each([
 			["/roms/Wii/game.iso", "Wii"],
 			["/roms/GameCube/game.iso", "GameCube"],

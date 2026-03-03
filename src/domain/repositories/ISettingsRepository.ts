@@ -28,6 +28,8 @@ export interface AppSettings {
 	readonly deleteSourceAfterSuccess: boolean;
 	/** Whether to skip processing if output file already exists. */
 	readonly skipExisting: boolean;
+	/** Whether detection tracing diagnostics are enabled. */
+	readonly enableDetectionTracing: boolean;
 }
 
 /**
@@ -137,6 +139,20 @@ export interface ISettingsRepository {
 	 * @param value - Whether to delete source after success
 	 */
 	setDeleteSourceAfterSuccess(value: boolean): void;
+
+	/**
+	 * Get the detection tracing setting.
+	 *
+	 * @returns Whether detection tracing diagnostics are enabled
+	 */
+	getEnableDetectionTracing(): boolean;
+
+	/**
+	 * Set the detection tracing setting.
+	 *
+	 * @param value - Whether detection tracing diagnostics are enabled
+	 */
+	setEnableDetectionTracing(value: boolean): void;
 
 	/**
 	 * Subscribe to settings changes.

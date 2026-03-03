@@ -18,6 +18,16 @@ export type {
 	DolphinSettings,
 };
 
+type DetectionTraceFlagHost = typeof globalThis & {
+	__RETROPACKER_DETECT_TRACE__?: boolean;
+};
+
+function setDetectionTraceGlobalFlag(enabled: boolean): void {
+	(globalThis as DetectionTraceFlagHost).__RETROPACKER_DETECT_TRACE__ = enabled;
+}
+
+setDetectionTraceGlobalFlag(false);
+
 interface PackerState {
 	// UI State
 	activeWorkflow: WorkflowType;
@@ -39,6 +49,9 @@ interface PackerState {
 
 	// Skip existing output files
 	skipExisting: boolean;
+
+	// Detection diagnostics
+	enableDetectionTracing: boolean;
 
 	// Output directory (empty = same as source)
 	outputDirectory: string;
@@ -66,6 +79,8 @@ interface PackerState {
 	setDeleteSourceAfterSuccess: (val: boolean) => void;
 
 	setSkipExisting: (val: boolean) => void;
+
+	setEnableDetectionTracing: (val: boolean) => void;
 
 	setOutputDirectory: (dir: string) => void;
 }
@@ -100,6 +115,8 @@ export const usePackerStore = create<PackerState>()(
 
 			skipExisting: false,
 
+			enableDetectionTracing: false,
+
 			outputDirectory: "",
 
 			setActiveWorkflow: (activeWorkflow) => set({ activeWorkflow }),
@@ -124,11 +141,19 @@ export const usePackerStore = create<PackerState>()(
 
 			setSkipExisting: (skipExisting) => set({ skipExisting }),
 
+			setEnableDetectionTracing: (enableDetectionTracing) => {
+				setDetectionTraceGlobalFlag(enableDetectionTracing);
+				set({ enableDetectionTracing });
+			},
+
 			setOutputDirectory: (outputDirectory) => set({ outputDirectory }),
 		}),
 		{
 			name: "retropacker-settings",
 			version: 5,
+			onRehydrateStorage: () => (state) => {
+				setDetectionTraceGlobalFlag(state?.enableDetectionTracing ?? false);
+			},
 		},
 	),
 );

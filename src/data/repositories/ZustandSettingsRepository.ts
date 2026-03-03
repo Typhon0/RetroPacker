@@ -36,6 +36,7 @@ export class ZustandSettingsRepository implements ISettingsRepository {
 			platform: state.platform,
 			deleteSourceAfterSuccess: state.deleteSourceAfterSuccess,
 			skipExisting: state.skipExisting,
+			enableDetectionTracing: state.enableDetectionTracing,
 		};
 	}
 
@@ -130,6 +131,20 @@ export class ZustandSettingsRepository implements ISettingsRepository {
 	}
 
 	/**
+	 * Get the detection tracing setting.
+	 */
+	getEnableDetectionTracing(): boolean {
+		return usePackerStore.getState().enableDetectionTracing;
+	}
+
+	/**
+	 * Set the detection tracing setting.
+	 */
+	setEnableDetectionTracing(value: boolean): void {
+		usePackerStore.getState().setEnableDetectionTracing(value);
+	}
+
+	/**
 	 * Subscribe to settings changes.
 	 */
 	subscribe(callback: (settings: AppSettings) => void): () => void {
@@ -144,6 +159,7 @@ export class ZustandSettingsRepository implements ISettingsRepository {
 				platform: state.platform,
 				deleteSourceAfterSuccess: state.deleteSourceAfterSuccess,
 				skipExisting: state.skipExisting,
+				enableDetectionTracing: state.enableDetectionTracing,
 			});
 		});
 	}

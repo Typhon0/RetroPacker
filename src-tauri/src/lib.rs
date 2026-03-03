@@ -9,7 +9,7 @@ use tauri::ipc::Response;
 use tauri::Manager;
 
 const DEFAULT_READ_BYTES: usize = 2048;
-const MAX_READ_BYTES: usize = 65536;
+const MAX_READ_BYTES: usize = 2 * 1024 * 1024;
 
 fn resolve_read_len(requested: Option<usize>) -> Result<usize, String> {
     let read_len = requested.unwrap_or(DEFAULT_READ_BYTES);
@@ -27,7 +27,11 @@ fn resolve_read_len(requested: Option<usize>) -> Result<usize, String> {
 /// Read a range of bytes from a file.
 /// Returns raw bytes via IPC Response for zero-copy transfer.
 #[tauri::command]
-fn read_file_bytes(path: String, offset: Option<u64>, length: Option<usize>) -> Result<Response, String> {
+fn read_file_bytes(
+    path: String,
+    offset: Option<u64>,
+    length: Option<usize>,
+) -> Result<Response, String> {
     let mut file = File::open(&path).map_err(|e| format!("Failed to open file: {e}"))?;
 
     if let Some(off) = offset {

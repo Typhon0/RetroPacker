@@ -157,6 +157,8 @@ export function GlobalSettings() {
 		setDolphinSetting,
 		deleteSourceAfterSuccess,
 		setDeleteSourceAfterSuccess,
+		enableDetectionTracing,
+		setEnableDetectionTracing,
 		outputDirectory,
 		setOutputDirectory,
 	} = usePackerStore();
@@ -502,6 +504,26 @@ export function GlobalSettings() {
 								Troubleshooting & Logs
 							</h3>
 							<div className="space-y-4">
+								<label className="flex items-center gap-2 cursor-pointer p-2 hover:bg-muted/50 rounded-md transition-colors">
+									<input
+										type="checkbox"
+										className="h-4 w-4 rounded border-gray-300"
+										checked={enableDetectionTracing}
+										onChange={(e) =>
+											setEnableDetectionTracing(e.target.checked)
+										}
+									/>
+									<div className="flex flex-col">
+										<span className="text-sm font-medium">
+											Enable Detection Tracing
+										</span>
+										<span className="text-xs text-muted-foreground">
+											Prints detailed platform detection steps to the developer
+											console for troubleshooting Unknown matches.
+										</span>
+									</div>
+								</label>
+
 								<div className="flex flex-col gap-1 p-2 hover:bg-muted/50 rounded-md transition-colors">
 									<span className="text-sm font-medium">
 										Export Session Logs
