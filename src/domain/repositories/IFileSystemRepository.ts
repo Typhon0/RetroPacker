@@ -68,6 +68,13 @@ export interface IFileSystemRepository {
 	joinPath(...segments: string[]): Promise<string>;
 
 	/**
+	 * Get the application data directory path.
+	 *
+	 * @returns Absolute app data directory path
+	 */
+	getAppDataDir(): Promise<string>;
+
+	/**
 	 * Get the directory name from a path.
 	 *
 	 * @param path - Full path
@@ -90,12 +97,28 @@ export interface IFileSystemRepository {
 	): Promise<Uint8Array>;
 
 	/**
+	 * Convert a local file path into a loadable source URL.
+	 *
+	 * @param path - Absolute file path
+	 * @returns URL suitable for browser/image src usage
+	 */
+	convertFileSource(path: string): string;
+
+	/**
 	 * Write text to a file.
 	 *
 	 * @param path - Path to the file
 	 * @param content - Text content to write
 	 */
 	writeTextFile(path: string, content: string): Promise<void>;
+
+	/**
+	 * Write bytes to a file.
+	 *
+	 * @param path - Path to the file
+	 * @param content - Byte content to write
+	 */
+	writeBytesFile(path: string, content: Uint8Array): Promise<void>;
 
 	/**
 	 * Create a directory (including parent directories if needed).
@@ -111,6 +134,20 @@ export interface IFileSystemRepository {
 	 * @returns True if successful
 	 */
 	moveToTrash(path: string): Promise<boolean>;
+
+	/**
+	 * Open a file or directory with the system default application.
+	 *
+	 * @param path - Path to open
+	 */
+	openPath(path: string): Promise<void>;
+
+	/**
+	 * Reveal a file in its containing directory.
+	 *
+	 * @param path - Path to reveal
+	 */
+	revealInDirectory(path: string): Promise<void>;
 
 	/**
 	 * Read file contents as a UTF-8 text string.

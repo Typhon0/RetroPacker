@@ -4,7 +4,6 @@
  * @module components/dashboard/JobTable/JobTable
  */
 
-import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { ChevronsUpDown, Filter } from "lucide-react";
 import {
 	type ReactNode,
@@ -35,6 +34,7 @@ import type { Platform } from "@/domain/types/platform.types";
 import type { WorkflowType } from "@/domain/types/workflow.types";
 import { useSignalValue } from "@/hooks/useSignalValue";
 import { buildCueBinLinkMap } from "@/lib/cueBinLinking";
+import { useRepositories } from "@/presentation/context/RepositoryContext";
 import { ProcessRegistry } from "@/services/ProcessRegistry";
 import { jobStore } from "@/stores/JobStore";
 import { FolderRow } from "./FolderRow";
@@ -123,6 +123,7 @@ export function JobTable({
 	onSelectJob,
 	selectedJobId,
 }: JobTableProps) {
+	const { fileSystem } = useRepositories();
 	const queue = useSignalValue(jobStore.queues[workflow]);
 	const jobRuntimeById = useSignalValue(
 		jobStore.runtimeByWorkflow[workflow],
@@ -231,16 +232,21 @@ export function JobTable({
 		(jobId: string) => {
 			const job = jobStore.getJob(workflow, jobId);
 			if (!job) return;
-			revealItemInDir(job.path).catch((e) =>
-				console.warn("Failed to reveal location", e),
-			);
+			fileSystem
+				.revealInDirectory(job.path)
+				.catch((e) => console.warn("Failed to reveal location", e));
 		},
-		[workflow],
+		[fileSystem, workflow],
 	);
 
-	const handleOpenFolderLocation = useCallback((path: string) => {
-		openPath(path).catch((e) => console.warn("Failed to open folder", e));
-	}, []);
+	const handleOpenFolderLocation = useCallback(
+		(path: string) => {
+			fileSystem
+				.openPath(path)
+				.catch((e) => console.warn("Failed to open folder", e));
+		},
+		[fileSystem],
+	);
 
 	const [statusFilter, setStatusFilter] = useState<string>("all");
 	const [systemFilter, setSystemFilter] = useState<string>("all");

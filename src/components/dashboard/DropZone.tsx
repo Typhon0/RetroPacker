@@ -1,5 +1,3 @@
-import { open } from "@tauri-apps/plugin-dialog";
-import { stat } from "@tauri-apps/plugin-fs";
 import { FolderPlus, Loader2, Upload } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -7,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import type { WorkflowType } from "@/domain/types/workflow.types";
 import { cn } from "@/lib/utils";
+import { useRepositories } from "@/presentation/context/RepositoryContext";
 import {
 	type QueueAddProgress,
 	useQueueManager,
@@ -30,6 +29,7 @@ export function DropZone({ workflow }: DropZoneProps) {
 
 	// Use the new Clean Architecture hook
 	const { addFile, addFolders, fileConfig } = useQueueManager(workflow);
+	const { dialogRepository, fileSystem } = useRepositories();
 
 	const handleDragOver = useCallback((e: React.DragEvent) => {
 		e.preventDefault();
@@ -103,7 +103,7 @@ export function DropZone({ workflow }: DropZoneProps) {
 				const name = filePath.split(/[\\/]/).pop() || "unknown";
 				let size = 0;
 				try {
-					const fileStat = await stat(filePath);
+					const fileStat = await fileSystem.getFileInfo(filePath);
 					size = fileStat.size;
 				} catch (e) {
 					console.warn(`Failed to stat file ${filePath}, assuming size 0`, e);
@@ -127,7 +127,7 @@ export function DropZone({ workflow }: DropZoneProps) {
 
 			setDropError(unsupportedMessage);
 		},
-		[addFile],
+		[addFile, fileSystem],
 	);
 
 	const beginAnalysis = useCallback(() => {
@@ -162,7 +162,7 @@ export function DropZone({ workflow }: DropZoneProps) {
 	const handleClick = useCallback(async () => {
 		try {
 			setDropError(undefined);
-			const selected = await open({
+			const selected = await dialogRepository.open({
 				multiple: true,
 				filters: [
 					{
@@ -185,14 +185,14 @@ export function DropZone({ workflow }: DropZoneProps) {
 			console.error("Failed to open file dialog", err);
 			endAnalysis();
 		}
-	}, [beginAnalysis, endAnalysis, fileConfig, processPaths]);
+	}, [beginAnalysis, dialogRepository, endAnalysis, fileConfig, processPaths]);
 
 	const handleAddFolder = useCallback(
 		async (e: React.MouseEvent) => {
 			e.stopPropagation();
 			try {
 				setDropError(undefined);
-				const selected = await open({
+				const selected = await dialogRepository.open({
 					directory: true,
 					multiple: true,
 				});
@@ -219,7 +219,7 @@ export function DropZone({ workflow }: DropZoneProps) {
 				console.error("Failed to open directory dialog", err);
 			}
 		},
-		[addFolders, beginAnalysis, endAnalysis],
+		[addFolders, beginAnalysis, dialogRepository, endAnalysis],
 	);
 
 	useEffect(() => {

@@ -54,6 +54,13 @@ export class MockFileSystemRepository implements IFileSystemRepository {
 	}
 
 	/**
+	 * Return a mock app data directory path.
+	 */
+	async getAppDataDir(): Promise<string> {
+		return "/mock/app-data";
+	}
+
+	/**
 	 * Get parent directory.
 	 */
 	async dirname(path: string): Promise<string> {
@@ -74,10 +81,25 @@ export class MockFileSystemRepository implements IFileSystemRepository {
 	}
 
 	/**
+	 * Convert a file path to a pseudo URL.
+	 */
+	convertFileSource(path: string): string {
+		const normalized = path.replace(/\\/g, "/");
+		return `mock://file/${normalized}`;
+	}
+
+	/**
 	 * No-op for mock.
 	 */
 	async writeTextFile(_path: string, _content: string): Promise<void> {
 		console.log("[MOCK] writeTextFile called");
+	}
+
+	/**
+	 * No-op for mock.
+	 */
+	async writeBytesFile(_path: string, _content: Uint8Array): Promise<void> {
+		console.log("[MOCK] writeBytesFile called");
 	}
 
 	/**
@@ -93,6 +115,20 @@ export class MockFileSystemRepository implements IFileSystemRepository {
 	async moveToTrash(_filePath: string): Promise<boolean> {
 		console.log("[MOCK] moveToTrash called");
 		return true;
+	}
+
+	/**
+	 * No-op for mock.
+	 */
+	async openPath(_path: string): Promise<void> {
+		console.log("[MOCK] openPath called");
+	}
+
+	/**
+	 * No-op for mock.
+	 */
+	async revealInDirectory(_path: string): Promise<void> {
+		console.log("[MOCK] revealInDirectory called");
 	}
 
 	/**

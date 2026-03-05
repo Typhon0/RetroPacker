@@ -7,6 +7,7 @@ import type {
 	ICommandExecutor,
 	SpawnedProcess,
 } from "@/domain/repositories/ICommandExecutor";
+import type { IDatabaseRepository } from "@/domain/repositories/IDatabaseRepository";
 import type { IFileSystemRepository } from "@/domain/repositories/IFileSystemRepository";
 import type { INotificationService } from "@/domain/repositories/INotificationService";
 import type { Platform } from "@/domain/types/platform.types";
@@ -89,6 +90,9 @@ const baseFileSystem: IFileSystemRepository = {
 	async joinPath(...segments: string[]) {
 		return segments.join("/");
 	},
+	async getAppDataDir() {
+		return "/mock/app-data";
+	},
 	async dirname(path: string) {
 		const normalized = path.replace(/\\/g, "/");
 		const idx = normalized.lastIndexOf("/");
@@ -97,7 +101,13 @@ const baseFileSystem: IFileSystemRepository = {
 	async readBytes() {
 		return new Uint8Array();
 	},
+	convertFileSource(path: string) {
+		return `mock://file/${path}`;
+	},
 	async writeTextFile() {
+		return;
+	},
+	async writeBytesFile() {
 		return;
 	},
 	async createDirectory() {
@@ -105,6 +115,12 @@ const baseFileSystem: IFileSystemRepository = {
 	},
 	async moveToTrash() {
 		return true;
+	},
+	async openPath() {
+		return;
+	},
+	async revealInDirectory() {
+		return;
 	},
 	async readTextFile() {
 		return "";
@@ -193,6 +209,12 @@ const settings = {
 	skipExisting: false,
 };
 
+const baseDatabaseRepository: Pick<IDatabaseRepository, "checkHash"> = {
+	async checkHash() {
+		return null;
+	},
+};
+
 afterEach(() => {
 	ProcessRegistry.reset();
 	vi.useRealTimers();
@@ -227,6 +249,7 @@ describe("ProcessJobUseCase", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: notifications.service,
 			fileSystem: baseFileSystem,
 		});
@@ -262,6 +285,7 @@ describe("ProcessJobUseCase", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: notifications.service,
 			fileSystem: baseFileSystem,
 		});
@@ -288,6 +312,7 @@ describe("ProcessJobUseCase", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: notifications.service,
 			fileSystem: baseFileSystem,
 		});
@@ -309,6 +334,7 @@ describe("ProcessJobUseCase", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: createNotificationServiceSpy().service,
 			fileSystem: baseFileSystem,
 		});
@@ -340,6 +366,7 @@ describe("ProcessJobUseCase", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor: executor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: createNotificationServiceSpy().service,
 			fileSystem,
 		});
@@ -375,6 +402,7 @@ describe("ProcessJobUseCase", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor: executor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: createNotificationServiceSpy().service,
 			fileSystem,
 		});
@@ -411,6 +439,7 @@ describe("ProcessJobUseCase endTime", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: createNotificationServiceSpy().service,
 			fileSystem: baseFileSystem,
 		});
@@ -437,6 +466,7 @@ describe("ProcessJobUseCase endTime", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: createNotificationServiceSpy().service,
 			fileSystem: baseFileSystem,
 		});
@@ -469,6 +499,7 @@ describe("ProcessJobUseCase skipExisting", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: createNotificationServiceSpy().service,
 			fileSystem: existsFileSystem,
 		});
@@ -498,6 +529,7 @@ describe("ProcessJobUseCase skipExisting", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor: executor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: createNotificationServiceSpy().service,
 			fileSystem: existsFileSystem,
 		});
@@ -523,6 +555,7 @@ describe("ProcessJobUseCase tool selection", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor: executor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: createNotificationServiceSpy().service,
 			fileSystem: baseFileSystem,
 		});
@@ -540,6 +573,7 @@ describe("ProcessJobUseCase tool selection", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor: executor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: createNotificationServiceSpy().service,
 			fileSystem: baseFileSystem,
 		});
@@ -562,6 +596,7 @@ describe("ProcessJobUseCase tool selection", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor: executor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: createNotificationServiceSpy().service,
 			fileSystem: baseFileSystem,
 		});
@@ -593,6 +628,7 @@ describe("ProcessJobUseCase tool selection", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: notifications.service,
 			fileSystem: baseFileSystem,
 		});
@@ -616,6 +652,7 @@ describe("ProcessJobUseCase tool selection", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor: executor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: createNotificationServiceSpy().service,
 			fileSystem: baseFileSystem,
 		});
@@ -636,6 +673,7 @@ describe("ProcessJobUseCase tool selection", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor: executor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: createNotificationServiceSpy().service,
 			fileSystem: baseFileSystem,
 		});
@@ -658,6 +696,7 @@ describe("ProcessJobUseCase tool selection", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor: executor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: createNotificationServiceSpy().service,
 			fileSystem: baseFileSystem,
 		});
@@ -679,6 +718,7 @@ describe("ProcessJobUseCase arg building", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor: executor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: createNotificationServiceSpy().service,
 			fileSystem: baseFileSystem,
 		});
@@ -717,6 +757,7 @@ describe("ProcessJobUseCase arg building", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor: executor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: createNotificationServiceSpy().service,
 			fileSystem,
 		});
@@ -761,6 +802,7 @@ describe("ProcessJobUseCase cue preprocessing failures", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: createNotificationServiceSpy().service,
 			fileSystem,
 		});
@@ -795,6 +837,7 @@ describe("ProcessJobUseCase cue preprocessing failures", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: createNotificationServiceSpy().service,
 			fileSystem,
 		});
@@ -826,6 +869,7 @@ describe("ProcessJobUseCase failures", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: createNotificationServiceSpy().service,
 			fileSystem: baseFileSystem,
 		});
@@ -852,6 +896,7 @@ describe("ProcessJobUseCase failures", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: createNotificationServiceSpy().service,
 			fileSystem: baseFileSystem,
 		});
@@ -872,6 +917,7 @@ describe("ProcessJobUseCase failures", () => {
 
 		const useCase = new ProcessJobUseCase({
 			commandExecutor,
+			databaseRepository: baseDatabaseRepository,
 			notificationService: createNotificationServiceSpy().service,
 			fileSystem: baseFileSystem,
 		});

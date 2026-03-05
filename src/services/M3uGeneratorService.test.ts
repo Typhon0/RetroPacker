@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { IFileSystemRepository } from "@/domain/repositories/IFileSystemRepository";
-import { M3uGeneratorService } from "./M3uGeneratorService";
+import { generateM3uFiles, groupByDisc } from "./M3uGeneratorService";
 
 // ── Helpers ──────────────────────────────────────────────────
 
@@ -26,6 +26,9 @@ function createMockFileSystem(
 		async joinPath(...segments) {
 			return segments.join("/");
 		},
+		async getAppDataDir() {
+			return "/mock/app-data";
+		},
 		async dirname(path) {
 			const idx = path.replace(/\\/g, "/").lastIndexOf("/");
 			return idx === -1 ? "." : path.slice(0, idx);
@@ -33,7 +36,13 @@ function createMockFileSystem(
 		async readBytes() {
 			return new Uint8Array();
 		},
+		convertFileSource(path) {
+			return `mock://file/${path}`;
+		},
 		async writeTextFile() {
+			return;
+		},
+		async writeBytesFile() {
 			return;
 		},
 		async createDirectory() {
@@ -41,6 +50,12 @@ function createMockFileSystem(
 		},
 		async moveToTrash() {
 			return true;
+		},
+		async openPath() {
+			return;
+		},
+		async revealInDirectory() {
+			return;
 		},
 		async readTextFile() {
 			return "";
@@ -63,10 +78,10 @@ function createMockFileSystem(
 
 // ── groupByDisc ──────────────────────────────────────────────
 
-describe("M3uGeneratorService.groupByDisc", () => {
+describe("groupByDisc", () => {
 	it("groups standard (Disc N) patterns", () => {
 		const filenames = ["MGS (Disc 1).chd", "MGS (Disc 2).chd"];
-		const groups = M3uGeneratorService.groupByDisc(filenames);
+		const groups = groupByDisc(filenames);
 
 		expect(groups.size).toBe(1);
 		const group = groups.get("MGS");
@@ -78,14 +93,14 @@ describe("M3uGeneratorService.groupByDisc", () => {
 
 	it("groups [Disc N] bracket variants", () => {
 		const filenames = ["Game [Disc 1].chd", "Game [Disc 2].chd"];
-		const groups = M3uGeneratorService.groupByDisc(filenames);
+		const groups = groupByDisc(filenames);
 		expect(groups.size).toBe(1);
 		expect(groups.has("Game")).toBe(true);
 	});
 
 	it("groups (Pt N) variants", () => {
 		const filenames = ["My Game (Pt 1).chd", "My Game (Pt 2).chd"];
-		const groups = M3uGeneratorService.groupByDisc(filenames);
+		const groups = groupByDisc(filenames);
 		expect(groups.size).toBe(1);
 		expect(groups.has("My Game")).toBe(true);
 	});
@@ -96,21 +111,21 @@ describe("M3uGeneratorService.groupByDisc", () => {
 			"RPG (Part 2).chd",
 			"RPG (Part 3).chd",
 		];
-		const groups = M3uGeneratorService.groupByDisc(filenames);
+		const groups = groupByDisc(filenames);
 		expect(groups.size).toBe(1);
 		expect(groups.get("RPG")?.entries).toHaveLength(3);
 	});
 
 	it("groups (Disk N) variants", () => {
 		const filenames = ["Game (Disk 1).chd", "Game (Disk 2).chd"];
-		const groups = M3uGeneratorService.groupByDisc(filenames);
+		const groups = groupByDisc(filenames);
 		expect(groups.size).toBe(1);
 		expect(groups.has("Game")).toBe(true);
 	});
 
 	it("does not group single-disc games", () => {
 		const filenames = ["Single Game.chd"];
-		const groups = M3uGeneratorService.groupByDisc(filenames);
+		const groups = groupByDisc(filenames);
 		expect(groups.size).toBe(0);
 	});
 
@@ -122,7 +137,7 @@ describe("M3uGeneratorService.groupByDisc", () => {
 			"FF7 (Disc 2).chd",
 			"FF7 (Disc 3).chd",
 		];
-		const groups = M3uGeneratorService.groupByDisc(filenames);
+		const groups = groupByDisc(filenames);
 		expect(groups.size).toBe(2);
 		expect(groups.get("MGS")?.entries).toHaveLength(2);
 		expect(groups.get("FF7")?.entries).toHaveLength(3);
@@ -134,7 +149,7 @@ describe("M3uGeneratorService.groupByDisc", () => {
 			"Game (Disc 1).chd",
 			"Game (Disc 2).chd",
 		];
-		const groups = M3uGeneratorService.groupByDisc(filenames);
+		const groups = groupByDisc(filenames);
 		const entries = groups.get("Game")?.entries ?? [];
 		expect(entries[0].discNumber).toBe(1);
 		expect(entries[1].discNumber).toBe(2);
@@ -144,7 +159,7 @@ describe("M3uGeneratorService.groupByDisc", () => {
 
 // ── generateM3uFiles ────────────────────────────────────────
 
-describe("M3uGeneratorService.generateM3uFiles", () => {
+describe("generateM3uFiles", () => {
 	it("generates M3U for multi-disc group with correct content", async () => {
 		const writtenFiles: Record<string, string> = {};
 		const fs = createMockFileSystem({
@@ -155,11 +170,7 @@ describe("M3uGeneratorService.generateM3uFiles", () => {
 
 		const paths = ["/output/MGS (Disc 1).chd", "/output/MGS (Disc 2).chd"];
 
-		const result = await M3uGeneratorService.generateM3uFiles(
-			"/output",
-			paths,
-			fs,
-		);
+		const result = await generateM3uFiles("/output", paths, fs);
 
 		expect(result).toHaveLength(1);
 		expect(result[0]).toBe("/output/MGS.m3u");
@@ -177,11 +188,7 @@ describe("M3uGeneratorService.generateM3uFiles", () => {
 		});
 
 		const paths = ["/output/Single Game.chd"];
-		const result = await M3uGeneratorService.generateM3uFiles(
-			"/output",
-			paths,
-			fs,
-		);
+		const result = await generateM3uFiles("/output", paths, fs);
 
 		expect(result).toHaveLength(0);
 		expect(Object.keys(writtenFiles)).toHaveLength(0);
@@ -203,11 +210,7 @@ describe("M3uGeneratorService.generateM3uFiles", () => {
 			"/output/FF7 (Disc 3).chd",
 		];
 
-		const result = await M3uGeneratorService.generateM3uFiles(
-			"/output",
-			paths,
-			fs,
-		);
+		const result = await generateM3uFiles("/output", paths, fs);
 
 		expect(result).toHaveLength(2);
 		expect(writtenFiles["/output/MGS.m3u"]).toBe(
@@ -232,7 +235,7 @@ describe("M3uGeneratorService.generateM3uFiles", () => {
 			"/output/Game (Disc 2).chd",
 		];
 
-		await M3uGeneratorService.generateM3uFiles("/output", paths, fs);
+		await generateM3uFiles("/output", paths, fs);
 		const lines = writtenFiles["/output/Game.m3u"].split("\n");
 		expect(lines[0]).toBe("Game (Disc 1).chd");
 		expect(lines[1]).toBe("Game (Disc 2).chd");

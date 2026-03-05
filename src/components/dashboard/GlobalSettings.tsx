@@ -1,8 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
-import { appDataDir } from "@tauri-apps/api/path";
-import { open, save } from "@tauri-apps/plugin-dialog";
-import { writeFile } from "@tauri-apps/plugin-fs";
-import { openPath } from "@tauri-apps/plugin-opener";
 import {
 	Database,
 	Download,
@@ -31,10 +26,12 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useRepositories } from "@/presentation/context/RepositoryContext";
 import { jobStore } from "@/stores/JobStore";
 import { usePackerStore } from "@/stores/usePackerStore";
 
 function DatabaseManagerTab() {
+	const { databaseRepository, dialogRepository } = useRepositories();
 	const [stats, setStats] = useState<{
 		row_count: number;
 		last_updated: string;
@@ -44,15 +41,12 @@ function DatabaseManagerTab() {
 
 	const fetchStats = useCallback(async () => {
 		try {
-			const dbStats = await invoke<{
-				row_count: number;
-				last_updated: string;
-			}>("get_db_stats");
+			const dbStats = await databaseRepository.getStats();
 			setStats(dbStats);
 		} catch (e) {
 			console.error("Failed to fetch DB stats:", e);
 		}
-	}, []);
+	}, [databaseRepository]);
 
 	useEffect(() => {
 		fetchStats();
@@ -61,7 +55,7 @@ function DatabaseManagerTab() {
 	const handleSync = async () => {
 		try {
 			setIsSyncing(true);
-			await invoke("sync_online_databases");
+			await databaseRepository.syncOnlineDatabases();
 			await fetchStats();
 		} catch (e) {
 			console.error("Failed to sync databases:", e);
@@ -72,13 +66,13 @@ function DatabaseManagerTab() {
 
 	const handleImport = async () => {
 		try {
-			const selected = await open({
+			const selected = await dialogRepository.open({
 				multiple: false,
 				filters: [{ name: "DAT Files", extensions: ["dat", "xml"] }],
 			});
 			if (selected && typeof selected === "string") {
 				setIsImporting(true);
-				await invoke("import_dat_file", { path: selected });
+				await databaseRepository.importDatFile(selected);
 				await fetchStats();
 			}
 		} catch (e) {
@@ -147,6 +141,7 @@ function DatabaseManagerTab() {
 }
 
 export function GlobalSettings() {
+	const { dialogRepository, fileSystem } = useRepositories();
 	const {
 		preset,
 		customCompression,
@@ -164,7 +159,7 @@ export function GlobalSettings() {
 	} = usePackerStore();
 
 	const handlePickOutputDir = async () => {
-		const selected = await open({
+		const selected = await dialogRepository.open({
 			directory: true,
 			multiple: false,
 			title: "Select Output Directory",
@@ -176,7 +171,7 @@ export function GlobalSettings() {
 
 	const handleExportLogs = async () => {
 		try {
-			const path = await save({
+			const path = await dialogRepository.save({
 				filters: [{ name: "Logs", extensions: ["txt"] }],
 				defaultPath: "retropacker-logs.txt",
 			});
@@ -202,7 +197,7 @@ export function GlobalSettings() {
 			if (!hasJobs) logContents += "No jobs in current session.\n";
 
 			const bytes = new TextEncoder().encode(logContents);
-			await writeFile(path, bytes);
+			await fileSystem.writeBytesFile(path, bytes);
 		} catch (error) {
 			console.error("Failed to export logs:", error);
 		}
@@ -210,8 +205,8 @@ export function GlobalSettings() {
 
 	const handleOpenConfigFolder = async () => {
 		try {
-			const configPath = await appDataDir();
-			await openPath(configPath);
+			const configPath = await fileSystem.getAppDataDir();
+			await fileSystem.openPath(configPath);
 		} catch (error) {
 			console.error("Failed to open config folder:", error);
 		}

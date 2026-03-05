@@ -30,17 +30,23 @@ function createMockFileSystem(): IFileSystemRepository {
 	return {
 		getFileInfo: vi.fn().mockResolvedValue({ size: 700_000_000 }),
 		joinPath: vi.fn((...parts: string[]) => Promise.resolve(parts.join("/"))),
+		getAppDataDir: vi.fn().mockResolvedValue("/mock/app-data"),
 		dirname: vi.fn().mockResolvedValue("/roms"),
 		readDirectory: vi.fn().mockResolvedValue([]),
 		readBytes: vi.fn().mockResolvedValue(new Uint8Array(32832)),
+		convertFileSource: vi.fn((path: string) => `mock://file/${path}`),
 		readTextFile: vi.fn().mockResolvedValue(""),
 		readText: vi.fn().mockResolvedValue(""),
 		exists: vi.fn().mockResolvedValue(false),
 		writeTextFile: vi.fn(),
+		writeBytesFile: vi.fn(),
 		createDirectory: vi.fn(),
 		moveToTrash: vi.fn().mockResolvedValue(true),
+		openPath: vi.fn(),
+		revealInDirectory: vi.fn(),
 		removeDirectory: vi.fn(),
 		computeFileHash: vi.fn().mockResolvedValue(""),
+		computeFileSha1: vi.fn().mockResolvedValue(""),
 	} as unknown as IFileSystemRepository;
 }
 

@@ -30,79 +30,72 @@ export interface DiscGroup {
 	readonly entries: DiscEntry[];
 }
 
-export class M3uGeneratorService {
-	/**
-	 * Group filenames by their multi-disc base name.
-	 *
-	 * @param filenames - Array of filenames (not full paths)
-	 * @returns Map from normalized base name to sorted disc entries
-	 */
-	static groupByDisc(filenames: string[]): Map<string, DiscGroup> {
-		const groups = new Map<string, DiscGroup>();
+/**
+ * Group filenames by their multi-disc base name.
+ *
+ * @param filenames - Array of filenames (not full paths)
+ * @returns Map from normalized base name to sorted disc entries
+ */
+export function groupByDisc(filenames: string[]): Map<string, DiscGroup> {
+	const groups = new Map<string, DiscGroup>();
 
-		for (const filename of filenames) {
-			const match = filename.match(DISC_REGEX);
-			if (!match) continue;
-
-			const baseName = (match[1] + match[3]).trim();
-			// Strip trailing extension from base name for the key
-			const baseKey = baseName.replace(/\.[^.]+$/, "").trim();
-			const discNumber = parseInt(match[2], 10);
-
-			const existing = groups.get(baseKey);
-			if (existing) {
-				existing.entries.push({ filename, discNumber });
-			} else {
-				groups.set(baseKey, {
-					baseName: baseKey,
-					entries: [{ filename, discNumber }],
-				});
-			}
+	for (const filename of filenames) {
+		const match = filename.match(DISC_REGEX);
+		if (!match) {
+			continue;
 		}
 
-		// Sort entries within each group by disc number
-		for (const group of groups.values()) {
-			group.entries.sort((a, b) => a.discNumber - b.discNumber);
-		}
+		const baseName = (match[1] + match[3]).trim();
+		const baseKey = baseName.replace(/\.[^.]+$/, "").trim();
+		const discNumber = parseInt(match[2], 10);
 
-		return groups;
+		const existing = groups.get(baseKey);
+		if (existing) {
+			existing.entries.push({ filename, discNumber });
+		} else {
+			groups.set(baseKey, {
+				baseName: baseKey,
+				entries: [{ filename, discNumber }],
+			});
+		}
 	}
 
-	/**
-	 * Generate .m3u playlist files for multi-disc game groups.
-	 *
-	 * @param outputDir - Directory to write .m3u files to
-	 * @param completedOutputPaths - Full paths of successfully compressed .chd files
-	 * @param fileSystem - File system abstraction
-	 * @returns Array of generated .m3u file paths
-	 */
-	static async generateM3uFiles(
-		outputDir: string,
-		completedOutputPaths: string[],
-		fileSystem: IFileSystemRepository,
-	): Promise<string[]> {
-		// Extract filenames from full paths
-		const filenames = completedOutputPaths.map((p) =>
-			p.replace(/^.*[\\/]/, ""),
-		);
+	for (const group of groups.values()) {
+		group.entries.sort((a, b) => a.discNumber - b.discNumber);
+	}
 
-		const discGroups = M3uGeneratorService.groupByDisc(filenames);
-		const generatedPaths: string[] = [];
+	return groups;
+}
 
-		for (const [baseName, group] of discGroups) {
-			// Only generate M3U for groups with more than 1 disc
-			if (group.entries.length <= 1) continue;
+/**
+ * Generate .m3u playlist files for multi-disc game groups.
+ *
+ * @param outputDir - Directory to write .m3u files to
+ * @param completedOutputPaths - Full paths of successfully compressed .chd files
+ * @param fileSystem - File system abstraction
+ * @returns Array of generated .m3u file paths
+ */
+export async function generateM3uFiles(
+	outputDir: string,
+	completedOutputPaths: string[],
+	fileSystem: IFileSystemRepository,
+): Promise<string[]> {
+	const filenames = completedOutputPaths.map((p) => p.replace(/^.*[\\/]/, ""));
+	const discGroups = groupByDisc(filenames);
+	const generatedPaths: string[] = [];
 
-			// Build M3U content — relative filenames separated by newlines
-			const content = group.entries.map((entry) => entry.filename).join("\n");
-
-			const m3uFilename = `${baseName}.m3u`;
-			const m3uPath = await fileSystem.joinPath(outputDir, m3uFilename);
-
-			await fileSystem.writeTextFile(m3uPath, content);
-			generatedPaths.push(m3uPath);
+	for (const [baseName, group] of discGroups) {
+		if (group.entries.length <= 1) {
+			continue;
 		}
 
-		return generatedPaths;
+		const content = group.entries.map((entry) => entry.filename).join("\n");
+		const m3uFilename = `${baseName}.m3u`;
+		const m3uPath = await fileSystem.joinPath(outputDir, m3uFilename);
+
+		await fileSystem.writeTextFile(m3uPath, content);
+		generatedPaths.push(m3uPath);
 	}
+
+	return generatedPaths;
 }

@@ -5,8 +5,8 @@
  * @module data/repositories/TauriFileSystemRepository
  */
 
-import { invoke } from "@tauri-apps/api/core";
-import { join, dirname as pathDirname } from "@tauri-apps/api/path";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { appDataDir, join, dirname as pathDirname } from "@tauri-apps/api/path";
 import {
 	exists,
 	mkdir,
@@ -14,8 +14,13 @@ import {
 	readTextFile,
 	remove,
 	stat,
+	writeFile,
 	writeTextFile,
 } from "@tauri-apps/plugin-fs";
+import {
+	openPath as openWithSystem,
+	revealItemInDir,
+} from "@tauri-apps/plugin-opener";
 import { platform } from "@tauri-apps/plugin-os";
 import { Command } from "@tauri-apps/plugin-shell";
 import type {
@@ -79,6 +84,13 @@ export class TauriFileSystemRepository implements IFileSystemRepository {
 	}
 
 	/**
+	 * Get application data directory path.
+	 */
+	async getAppDataDir(): Promise<string> {
+		return appDataDir();
+	}
+
+	/**
 	 * Get directory name from path.
 	 */
 	async dirname(path: string): Promise<string> {
@@ -102,10 +114,24 @@ export class TauriFileSystemRepository implements IFileSystemRepository {
 	}
 
 	/**
+	 * Convert local file path to file source URL.
+	 */
+	convertFileSource(path: string): string {
+		return convertFileSrc(path);
+	}
+
+	/**
 	 * Write text to file.
 	 */
 	async writeTextFile(path: string, content: string): Promise<void> {
 		await writeTextFile(path, content);
+	}
+
+	/**
+	 * Write bytes to file.
+	 */
+	async writeBytesFile(path: string, content: Uint8Array): Promise<void> {
+		await writeFile(path, content);
 	}
 
 	/**
@@ -167,6 +193,20 @@ Add-Type -AssemblyName Microsoft.VisualBasic
 			console.error("Trash operation failed:", e);
 			return false;
 		}
+	}
+
+	/**
+	 * Open file or folder with system default application.
+	 */
+	async openPath(path: string): Promise<void> {
+		await openWithSystem(path);
+	}
+
+	/**
+	 * Reveal file in containing directory.
+	 */
+	async revealInDirectory(path: string): Promise<void> {
+		await revealItemInDir(path);
 	}
 
 	/**

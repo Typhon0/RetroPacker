@@ -1,5 +1,3 @@
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { open as openFile, stat } from "@tauri-apps/plugin-fs";
 import {
 	ChevronDown,
 	ChevronUp,
@@ -12,14 +10,14 @@ import {
 	Loader2,
 	Percent,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { isNintendoSystem } from "@/domain/types/platform.types";
-import { BinaryManagerService } from "@/services/BinaryManagerService";
-import { CoverArtService } from "@/services/CoverArtService";
-import { GameIdExtractor } from "@/services/GameIdExtractor";
-import { MetadataService } from "@/services/MetadataService";
+import { DetectSystemUseCase } from "@/domain/usecases/DetectSystemUseCase";
+import { useRepositories } from "@/presentation/context/RepositoryContext";
+import { fetchCover } from "@/services/CoverArtService";
+import { extractGameId } from "@/services/GameIdExtractor";
 
 interface GameInfo {
 	filename: string;
@@ -130,6 +128,13 @@ const formatFileSize = (bytes: number): string => {
 };
 
 export function InfoViewer() {
+	const { commandExecutor, dialogRepository, fileSystem, httpRepository } =
+		useRepositories();
+	const detectSystem = useMemo(
+		() => new DetectSystemUseCase({ fileSystem, commandExecutor }),
+		[fileSystem, commandExecutor],
+	);
+
 	const [gameInfo, setGameInfo] = useState<GameInfo | null>(null);
 	const [isLoading, setIsLoading] = useState(false);
 	const [isCoverLoading, setIsCoverLoading] = useState(false);
@@ -151,7 +156,7 @@ export function InfoViewer() {
 
 				if (!fileSize) {
 					try {
-						const fileStat = await stat(filePath);
+						const fileStat = await fileSystem.getFileInfo(filePath);
 						size = fileStat.size;
 					} catch (e) {
 						console.warn(`Failed to stat file ${filePath}`, e);
@@ -161,7 +166,7 @@ export function InfoViewer() {
 				// Determine format and system
 				const extension = filePath.toLowerCase().split(".").pop();
 				const format = extension?.toUpperCase() || "Unknown";
-				const system = await MetadataService.detectSystemAsync(filePath);
+				const system = await detectSystem.execute(filePath);
 
 				// Initialize info object
 				let gameId: string | null = null;
@@ -171,20 +176,22 @@ export function InfoViewer() {
 
 				// Extract game ID using the unified API
 				try {
-					gameId = await GameIdExtractor.extractGameId(filePath, system);
+					gameId = await extractGameId(filePath, system, {
+						commandExecutor,
+						fileSystem,
+					});
 				} catch (e) {
 					console.error("Failed to extract game ID:", e);
 				}
 
 				if (extension === "chd") {
 					try {
-						const command = BinaryManagerService.createCommand("chdman", [
+						const output = await commandExecutor.execute("chdman", [
 							"info",
 							"-i",
 							filePath,
 						]);
-						const output = await command.execute();
-						if (output.code === 0) {
+						if (output.code === 0 && output.stdout) {
 							rawOutput = output.stdout;
 							chdStats = parseChdOutput(rawOutput);
 						} else {
@@ -196,10 +203,7 @@ export function InfoViewer() {
 				} else if (extension === "cso") {
 					// CSO Header Reader
 					try {
-						const file = await openFile(filePath, { read: true });
-						const buffer = new Uint8Array(24); // CSO header is 24 bytes
-						await file.read(buffer);
-						await file.close();
+						const buffer = await fileSystem.readBytes(filePath, 0, 24);
 
 						// Parse CSO Header
 						// u32 magic (CISO)
@@ -243,13 +247,12 @@ export function InfoViewer() {
 					(extension === "iso" && isNintendoSystem(system))
 				) {
 					try {
-						const command = BinaryManagerService.createCommand("dolphintool", [
+						const output = await commandExecutor.execute("DolphinTool", [
 							"header",
 							"-i",
 							filePath,
 						]);
-						const output = await command.execute();
-						if (output.code === 0) {
+						if (output.code === 0 && output.stdout) {
 							rawOutput = output.stdout;
 							dolphinStats = parseDolphinOutput(rawOutput);
 							// Update gameId if found in stats and not already set
@@ -291,11 +294,10 @@ export function InfoViewer() {
 				console.log(`Fetching cover for ${name} (${system})`);
 				setIsCoverLoading(true); // Start cover spinner
 				try {
-					const coverUrl = await CoverArtService.fetchCover(
-						gameId,
-						system,
-						filePath,
-					);
+					const coverUrl = await fetchCover(gameId, system, filePath, {
+						fileSystem,
+						httpRepository,
+					});
 					if (coverUrl) {
 						setGameInfo((prev) => {
 							// Guard against stale updates if user switched files
@@ -319,7 +321,7 @@ export function InfoViewer() {
 				setIsLoading(false);
 			}
 		},
-		[],
+		[commandExecutor, detectSystem, fileSystem, httpRepository],
 	);
 
 	const processFile = useCallback(
@@ -369,7 +371,7 @@ export function InfoViewer() {
 
 	const handleClick = useCallback(async () => {
 		try {
-			const selected = await openDialog({
+			const selected = await dialogRepository.open({
 				multiple: false,
 				filters: [
 					{
@@ -396,7 +398,7 @@ export function InfoViewer() {
 		} catch (err) {
 			console.error("Failed to open file dialog", err);
 		}
-	}, [processFilePath]);
+	}, [dialogRepository, processFilePath]);
 
 	return (
 		<div className="flex flex-col gap-4 h-full">
@@ -476,12 +478,6 @@ export function InfoViewer() {
 							</CardTitle>
 						</CardHeader>
 						<CardContent className="space-y-6">
-							{gameInfo.system === "Unknown" && (
-								<div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-600">
-									Platform Unknown. Select a platform manually before processing
-									this file in queue workflows.
-								</div>
-							)}
 							<div className="flex flex-col md:flex-row gap-6">
 								{/* Cover Art Column */}
 								<div className="flex-shrink-0 mx-auto md:mx-0">

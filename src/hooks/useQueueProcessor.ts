@@ -119,11 +119,13 @@ export function useQueueProcessor(workflow: WorkflowType) {
 		() =>
 			new ProcessJobUseCase({
 				commandExecutor: repositories.commandExecutor,
+				databaseRepository: repositories.databaseRepository,
 				notificationService: repositories.notificationService,
 				fileSystem: repositories.fileSystem,
 			}),
 		[
 			repositories.commandExecutor,
+			repositories.databaseRepository,
 			repositories.notificationService,
 			repositories.fileSystem,
 		],
@@ -179,13 +181,13 @@ export function useQueueProcessor(workflow: WorkflowType) {
 							if (!firstVisibleJob) {
 								return;
 							}
-							const { M3uGeneratorService } = await import(
+							const { generateM3uFiles } = await import(
 								"@/services/M3uGeneratorService"
 							);
 							const outputDir = settings.outputDirectory
 								? settings.outputDirectory
 								: await repositories.fileSystem.dirname(firstVisibleJob.path);
-							const generated = await M3uGeneratorService.generateM3uFiles(
+							const generated = await generateM3uFiles(
 								outputDir,
 								completedPaths,
 								repositories.fileSystem,

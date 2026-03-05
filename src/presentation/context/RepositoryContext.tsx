@@ -1,24 +1,35 @@
 import type React from "react";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
-import { MockCommandExecutor } from "../../data/repositories/MockCommandExecutor";
-import { MockFileSystemRepository } from "../../data/repositories/MockFileSystemRepository";
-import { MockNotificationService } from "../../data/repositories/MockNotificationService";
-import { TauriCommandExecutor } from "../../data/repositories/TauriCommandExecutor";
-import { TauriFileSystemRepository } from "../../data/repositories/TauriFileSystemRepository";
-import { TauriNotificationService } from "../../data/repositories/TauriNotificationService";
-import { ZustandJobRepository } from "../../data/repositories/ZustandJobRepository";
-import { ZustandSettingsRepository } from "../../data/repositories/ZustandSettingsRepository";
-import type { ICommandExecutor } from "../../domain/repositories/ICommandExecutor";
-import type { IFileSystemRepository } from "../../domain/repositories/IFileSystemRepository";
-import type { IJobRepository } from "../../domain/repositories/IJobRepository";
-import type { INotificationService } from "../../domain/repositories/INotificationService";
-import type { ISettingsRepository } from "../../domain/repositories/ISettingsRepository";
-
-import { ProcessRegistry } from "../../services/ProcessRegistry";
+import { MockCommandExecutor } from "@/data/repositories/MockCommandExecutor";
+import { MockDatabaseRepository } from "@/data/repositories/MockDatabaseRepository";
+import { MockDialogRepository } from "@/data/repositories/MockDialogRepository";
+import { MockFileSystemRepository } from "@/data/repositories/MockFileSystemRepository";
+import { MockHttpRepository } from "@/data/repositories/MockHttpRepository";
+import { MockNotificationService } from "@/data/repositories/MockNotificationService";
+import { TauriCommandExecutor } from "@/data/repositories/TauriCommandExecutor";
+import { TauriDatabaseRepository } from "@/data/repositories/TauriDatabaseRepository";
+import { TauriDialogRepository } from "@/data/repositories/TauriDialogRepository";
+import { TauriFileSystemRepository } from "@/data/repositories/TauriFileSystemRepository";
+import { TauriHttpRepository } from "@/data/repositories/TauriHttpRepository";
+import { TauriNotificationService } from "@/data/repositories/TauriNotificationService";
+import { ZustandJobRepository } from "@/data/repositories/ZustandJobRepository";
+import { ZustandSettingsRepository } from "@/data/repositories/ZustandSettingsRepository";
+import type { ICommandExecutor } from "@/domain/repositories/ICommandExecutor";
+import type { IDatabaseRepository } from "@/domain/repositories/IDatabaseRepository";
+import type { IDialogRepository } from "@/domain/repositories/IDialogRepository";
+import type { IFileSystemRepository } from "@/domain/repositories/IFileSystemRepository";
+import type { IHttpRepository } from "@/domain/repositories/IHttpRepository";
+import type { IJobRepository } from "@/domain/repositories/IJobRepository";
+import type { INotificationService } from "@/domain/repositories/INotificationService";
+import type { ISettingsRepository } from "@/domain/repositories/ISettingsRepository";
+import { ProcessRegistry } from "@/services/ProcessRegistry";
 
 export interface Repositories {
 	readonly commandExecutor: ICommandExecutor;
+	readonly databaseRepository: IDatabaseRepository;
+	readonly dialogRepository: IDialogRepository;
 	readonly fileSystem: IFileSystemRepository;
+	readonly httpRepository: IHttpRepository;
 	readonly notificationService: INotificationService;
 	readonly jobRepository: IJobRepository;
 	readonly settingsRepository: ISettingsRepository;
@@ -42,7 +53,10 @@ function createRepositories(): Repositories {
 		ProcessRegistry.init(commandExecutor);
 		return {
 			commandExecutor,
+			databaseRepository: new TauriDatabaseRepository(),
+			dialogRepository: new TauriDialogRepository(),
 			fileSystem: new TauriFileSystemRepository(),
+			httpRepository: new TauriHttpRepository(),
 			notificationService: new TauriNotificationService(),
 			jobRepository,
 			settingsRepository,
@@ -55,7 +69,10 @@ function createRepositories(): Repositories {
 	ProcessRegistry.init(commandExecutor);
 	return {
 		commandExecutor,
+		databaseRepository: new MockDatabaseRepository(),
+		dialogRepository: new MockDialogRepository(),
 		fileSystem: new MockFileSystemRepository(),
+		httpRepository: new MockHttpRepository(),
 		notificationService: new MockNotificationService(),
 		jobRepository,
 		settingsRepository,

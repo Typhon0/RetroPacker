@@ -29,6 +29,9 @@ function createMockFileSystem(
 		async joinPath(...segments) {
 			return segments.join("/");
 		},
+		async getAppDataDir() {
+			return "/mock/app-data";
+		},
 		async dirname(path) {
 			const idx = path.replace(/\\/g, "/").lastIndexOf("/");
 			return idx === -1 ? "." : path.slice(0, idx);
@@ -36,7 +39,13 @@ function createMockFileSystem(
 		async readBytes() {
 			return new Uint8Array();
 		},
+		convertFileSource(path) {
+			return `mock://file/${path}`;
+		},
 		async writeTextFile() {
+			return;
+		},
+		async writeBytesFile() {
 			return;
 		},
 		async createDirectory() {
@@ -44,6 +53,12 @@ function createMockFileSystem(
 		},
 		async moveToTrash() {
 			return true;
+		},
+		async openPath() {
+			return;
+		},
+		async revealInDirectory() {
+			return;
 		},
 		async readTextFile() {
 			return "";

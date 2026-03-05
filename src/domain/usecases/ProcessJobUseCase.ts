@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { CueProcessorService } from "@/services/CueProcessorService";
 import { ProcessRegistry } from "@/services/ProcessRegistry";
 import type { JobState } from "../entities/JobState";
@@ -6,6 +5,7 @@ import type {
 	CommandCallbacks,
 	ICommandExecutor,
 } from "../repositories/ICommandExecutor";
+import type { IDatabaseRepository } from "../repositories/IDatabaseRepository";
 import type { IFileSystemRepository } from "../repositories/IFileSystemRepository";
 import type { INotificationService } from "../repositories/INotificationService";
 import {
@@ -26,6 +26,7 @@ import type { WorkflowType } from "../types/workflow.types";
  */
 export interface ProcessJobDependencies {
 	readonly commandExecutor: ICommandExecutor;
+	readonly databaseRepository?: Pick<IDatabaseRepository, "checkHash">;
 	readonly notificationService: INotificationService;
 	readonly fileSystem: IFileSystemRepository;
 }
@@ -221,16 +222,14 @@ export class ProcessJobUseCase {
 				job.appendLog(`Computing raw SHA-1 for ${job.filename}...`);
 
 				try {
-					const sha1 = await invoke<string>("compute_file_sha1", {
-						path: job.path,
-					});
+					const sha1 = await this.deps.fileSystem.computeFileSha1(job.path);
 					job.applyUpdates({ dataSha1: sha1 });
 					job.appendLog(`Raw SHA-1: ${sha1}`);
 
 					job.appendLog("Checking database for SHA-1...");
-					const verifiedName = await invoke<string | null>("check_hash", {
-						sha1,
-					});
+					const verifiedName = this.deps.databaseRepository
+						? await this.deps.databaseRepository.checkHash(sha1)
+						: null;
 					if (verifiedName) {
 						job.applyUpdates({ verifiedName });
 						job.appendLog(`Verified against database: ${verifiedName}`);
@@ -343,18 +342,23 @@ export class ProcessJobUseCase {
 							const sha1 = sha1Match[1].toUpperCase();
 							job.applyUpdates({ dataSha1: sha1 });
 							job.appendLog("Checking database for SHA-1...");
-							void invoke<string | null>("check_hash", { sha1 })
-								.then((verifiedName: string | null) => {
-									if (verifiedName) {
-										job.applyUpdates({ verifiedName });
-										job.appendLog(`Verified against database: ${verifiedName}`);
-									} else {
-										job.appendLog("Hash not found in database.");
-									}
-								})
-								.catch((err: unknown) => {
-									console.error("Failed to check hash:", err);
-								});
+							if (this.deps.databaseRepository) {
+								void this.deps.databaseRepository
+									.checkHash(sha1)
+									.then((verifiedName: string | null) => {
+										if (verifiedName) {
+											job.applyUpdates({ verifiedName });
+											job.appendLog(
+												`Verified against database: ${verifiedName}`,
+											);
+										} else {
+											job.appendLog("Hash not found in database.");
+										}
+									})
+									.catch((err: unknown) => {
+										console.error("Failed to check hash:", err);
+									});
+							}
 						}
 					}
 
