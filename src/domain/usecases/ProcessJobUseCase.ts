@@ -327,6 +327,9 @@ export class ProcessJobUseCase {
 				job.indeterminate.value = true;
 			}
 
+			// Captured during onStdout, looked up in onClose where async is safe
+			let pendingHashLookup: string | undefined;
+
 			const callbacks: CommandCallbacks = {
 				onStdout: (line) => {
 					job.appendLog(line);
@@ -341,24 +344,10 @@ export class ProcessJobUseCase {
 						if (sha1Match && !job.dataSha1.value) {
 							const sha1 = sha1Match[1].toUpperCase();
 							job.applyUpdates({ dataSha1: sha1 });
-							job.appendLog("Checking database for SHA-1...");
-							if (this.deps.databaseRepository) {
-								void this.deps.databaseRepository
-									.checkHash(sha1)
-									.then((verifiedName: string | null) => {
-										if (verifiedName) {
-											job.applyUpdates({ verifiedName });
-											job.appendLog(
-												`Verified against database: ${verifiedName}`,
-											);
-										} else {
-											job.appendLog("Hash not found in database.");
-										}
-									})
-									.catch((err: unknown) => {
-										console.error("Failed to check hash:", err);
-									});
-							}
+							job.appendLog(
+								"SHA-1 captured — will check database on completion.",
+							);
+							pendingHashLookup = sha1;
 						}
 					}
 
@@ -411,6 +400,26 @@ export class ProcessJobUseCase {
 									job.verificationResult.value !== "fail"
 								) {
 									job.applyUpdates({ verificationResult: "pass" });
+								}
+
+								// Run SHA-1 database lookup safely in onClose (avoids race with fire-and-forget)
+								if (pendingHashLookup && this.deps.databaseRepository) {
+									try {
+										const verifiedName =
+											await this.deps.databaseRepository.checkHash(
+												pendingHashLookup,
+											);
+										if (verifiedName) {
+											job.applyUpdates({ verifiedName });
+											job.appendLog(
+												`Verified against database: ${verifiedName}`,
+											);
+										} else {
+											job.appendLog("Hash not found in database.");
+										}
+									} catch (err: unknown) {
+										console.error("Failed to check hash:", err);
+									}
 								}
 
 								// Delete source file if setting is enabled (compress/extract only)

@@ -21,8 +21,6 @@ import {
 	openPath as openWithSystem,
 	revealItemInDir,
 } from "@tauri-apps/plugin-opener";
-import { platform } from "@tauri-apps/plugin-os";
-import { Command } from "@tauri-apps/plugin-shell";
 import type {
 	DirectoryEntry,
 	FileInfo,
@@ -142,53 +140,14 @@ export class TauriFileSystemRepository implements IFileSystemRepository {
 	}
 
 	/**
-	 * Move file to the system trash/recycle bin.
-	 * Cross-platform: Windows (PowerShell), macOS (Finder/osascript), Linux (gio trash).
+	 * Move file to the system trash/recycle bin via Rust backend.
+	 * Uses the `trash` crate for safe, cross-platform support.
 	 */
 	async moveToTrash(filePath: string): Promise<boolean> {
 		try {
-			const os = platform();
-
-			let command: ReturnType<typeof Command.create>;
-
-			if (os === "windows") {
-				const psScript = `
-Add-Type -AssemblyName Microsoft.VisualBasic
-[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile(
-  '${filePath.replace(/'/g, "''")}',
-  'OnlyErrorDialogs',
-  'SendToRecycleBin'
-)
-`;
-				command = Command.create("powershell", [
-					"-NoProfile",
-					"-NonInteractive",
-					"-Command",
-					psScript,
-				]);
-			} else if (os === "macos") {
-				// Use osascript to tell Finder to move the file to trash
-				const escapedPath = filePath
-					.replace(/\\/g, "\\\\")
-					.replace(/"/g, '\\"');
-				command = Command.create("osascript", [
-					"-e",
-					`tell application "Finder" to delete (POSIX file "${escapedPath}" as alias)`,
-				]);
-			} else {
-				// Linux: use gio trash (part of GLib/GNOME, widely available)
-				command = Command.create("gio", ["trash", filePath]);
-			}
-
-			const output = await command.execute();
-
-			if (output.code === 0) {
-				console.log(`Moved to trash: ${filePath}`);
-				return true;
-			}
-
-			console.error(`Failed to move to trash: ${output.stderr}`);
-			return false;
+			await invoke("move_to_trash", { path: filePath });
+			console.log(`Moved to trash: ${filePath}`);
+			return true;
 		} catch (e) {
 			console.error("Trash operation failed:", e);
 			return false;

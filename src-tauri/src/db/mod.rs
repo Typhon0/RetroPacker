@@ -1,14 +1,14 @@
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
-use reqwest::blocking::Client;
+use reqwest::Client;
 use rusqlite::{params, Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager};
 
 pub struct DbState {
-    pub conn: Mutex<Connection>,
+    pub conn: Arc<Mutex<Connection>>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -37,10 +37,11 @@ pub fn init_db(app: &AppHandle) -> SqlResult<Connection> {
         [],
     )?;
 
-    // Performance pragmas
+    // Performance pragmas — WAL mode gives near-identical write speed to
+    // MEMORY journal while providing full crash-recovery guarantees.
     conn.execute_batch(
-        "PRAGMA synchronous = OFF;
-         PRAGMA journal_mode = MEMORY;
+        "PRAGMA journal_mode = WAL;
+         PRAGMA synchronous = NORMAL;
          PRAGMA temp_store = MEMORY;
          PRAGMA cache_size = 10000;",
     )?;
@@ -302,7 +303,7 @@ pub fn import_dat_file(state: tauri::State<'_, DbState>, path: String) -> Result
 }
 
 #[tauri::command]
-pub fn sync_online_databases(state: tauri::State<'_, DbState>) -> Result<usize, String> {
+pub async fn sync_online_databases(state: tauri::State<'_, DbState>) -> Result<usize, String> {
     let urls = [
         "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/redump/Sony%20-%20PlayStation.dat",
         "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/redump/Sony%20-%20PlayStation%202.dat",
@@ -314,38 +315,66 @@ pub fn sync_online_databases(state: tauri::State<'_, DbState>) -> Result<usize, 
         "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/redump/Sega%20-%20Mega-CD%20-%20Sega%20CD.dat",
     ];
 
+    // Download all DAT files concurrently (non-blocking).
     let client = Client::new();
-    let mut conn = state.conn.lock().map_err(|e| e.to_string())?;
-    let mut total_inserted = 0;
+    let futures: Vec<_> = urls
+        .iter()
+        .map(|url| {
+            let client = client.clone();
+            let url = url.to_string();
+            async move {
+                let result = client.get(&url).send().await;
+                (url, result)
+            }
+        })
+        .collect();
+
+    let responses = futures::future::join_all(futures).await;
+
+    // Collect downloaded data
+    let mut downloaded: Vec<(String, Vec<u8>)> = Vec::new();
     let mut failures: Vec<String> = Vec::new();
 
-    for url in urls {
-        let response = match client.get(url).send() {
-            Ok(response) => response,
+    for (url, result) in responses {
+        match result {
             Err(error) => {
                 failures.push(format!("{} ({})", url, error));
-                continue;
             }
-        };
-
-        if !response.status().is_success() {
-            failures.push(format!("{} (HTTP {})", url, response.status()));
-            continue;
-        }
-
-        let bytes = match response.bytes() {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                failures.push(format!("{} ({})", url, error));
-                continue;
+            Ok(response) => {
+                if !response.status().is_success() {
+                    failures.push(format!("{} (HTTP {})", url, response.status()));
+                    continue;
+                }
+                match response.bytes().await {
+                    Ok(bytes) => downloaded.push((url, bytes.to_vec())),
+                    Err(error) => failures.push(format!("{} ({})", url, error)),
+                }
             }
-        };
-
-        match parse_dat_and_insert(&mut conn, &bytes) {
-            Ok(inserted) => total_inserted += inserted,
-            Err(error) => failures.push(format!("{} ({})", url, error)),
         }
     }
+
+    // Insert into SQLite on the blocking thread pool to avoid holding
+    // the Mutex across an await point.
+    let conn = Arc::clone(&state.conn);
+    let insert_result = tokio::task::spawn_blocking(move || {
+        let mut conn = conn.lock().map_err(|e| e.to_string())?;
+        let mut total_inserted: usize = 0;
+        let mut insert_failures: Vec<String> = Vec::new();
+
+        for (url, bytes) in &downloaded {
+            match parse_dat_and_insert(&mut conn, bytes) {
+                Ok(inserted) => total_inserted += inserted,
+                Err(error) => insert_failures.push(format!("{} ({})", url, error)),
+            }
+        }
+
+        Ok::<(usize, Vec<String>), String>((total_inserted, insert_failures))
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))??;
+
+    let (total_inserted, insert_failures) = insert_result;
+    failures.extend(insert_failures);
 
     if total_inserted == 0 {
         if failures.is_empty() {

@@ -106,13 +106,20 @@ fn compute_file_sha1(path: String) -> Result<String, String> {
     Ok(hex::encode(hash))
 }
 
+/// Move a file to the system trash/recycle bin.
+/// Uses the `trash` crate for safe, cross-platform support without shell commands.
+#[tauri::command]
+fn move_to_trash(path: String) -> Result<(), String> {
+    trash::delete(&path).map_err(|e| format!("Failed to move to trash: {}", e))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             let conn = db::init_db(app.handle()).expect("Failed to initialize database");
             app.manage(db::DbState {
-                conn: Mutex::new(conn),
+                conn: std::sync::Arc::new(Mutex::new(conn)),
             });
             Ok(())
         })
@@ -129,6 +136,7 @@ pub fn run() {
             read_file_text,
             compute_file_hash,
             compute_file_sha1,
+            move_to_trash,
             db::check_hash,
             db::get_db_stats,
             db::import_dat_file,
