@@ -3,7 +3,10 @@ import type { JobProps } from "@/domain/entities/Job";
 import { JobState } from "@/domain/entities/JobState";
 import type { Platform } from "@/domain/types/platform.types";
 import type { JobStatus, WorkflowType } from "@/domain/types/workflow.types";
-import { buildCueBinLinkMap } from "@/lib/cueBinLinking";
+import {
+	buildCueBinLinkMap,
+	filterVisibleCueBinJobs,
+} from "@/lib/cueBinLinking";
 
 const WORKFLOWS: readonly WorkflowType[] = [
 	"compress",
@@ -171,11 +174,6 @@ function getHiddenCueBinCompanionIds(queue: readonly JobState[]): Set<string> {
 	).hiddenCompanionJobIds;
 }
 
-function getVisibleQueue(queue: readonly JobState[]): JobState[] {
-	const hiddenIds = getHiddenCueBinCompanionIds(queue);
-	return queue.filter((job) => !hiddenIds.has(job.id));
-}
-
 function toQueueSnapshot(
 	jobs: readonly JobState[],
 ): Record<WorkflowType, JobState[]> {
@@ -236,13 +234,15 @@ class JobStore {
 
 	readonly queueStats = createWorkflowRecord((workflow) =>
 		computed(() =>
-			createQueueStats(getVisibleQueue(this.queues[workflow].value)),
+			createQueueStats(filterVisibleCueBinJobs(this.queues[workflow].value)),
 		),
 	);
 
 	readonly queueSummaries = createWorkflowRecord((workflow) =>
 		computed(() =>
-			createProgressSummary(getVisibleQueue(this.queues[workflow].value)),
+			createProgressSummary(
+				filterVisibleCueBinJobs(this.queues[workflow].value),
+			),
 		),
 	);
 
@@ -254,7 +254,7 @@ class JobStore {
 
 	readonly globalSummary = computed(() => {
 		const visibleJobs = WORKFLOWS.flatMap((workflow) =>
-			getVisibleQueue(this.queues[workflow].value),
+			filterVisibleCueBinJobs(this.queues[workflow].value),
 		);
 		return createProgressSummary(visibleJobs);
 	});

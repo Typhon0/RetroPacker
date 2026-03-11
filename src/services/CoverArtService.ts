@@ -16,6 +16,7 @@ interface CoverArtDependencies {
 		| "joinPath"
 		| "convertFileSource"
 		| "getAppDataDir"
+		| "writeBytesFile"
 	>;
 	readonly httpRepository: Pick<IHttpRepository, "fetch">;
 }
@@ -105,6 +106,19 @@ export async function fetchCover(
 			return localUrl;
 		}
 
+		if (cacheDir) {
+			const sanitizedKey = cacheKey.replace(/[^a-zA-Z0-9]/g, "_");
+			const cachedPath = await deps.fileSystem.joinPath(
+				cacheDir,
+				`${sanitizedKey}.png`,
+			);
+			if (await deps.fileSystem.exists(cachedPath)) {
+				const cachedUrl = deps.fileSystem.convertFileSource(cachedPath);
+				coverCache.set(cacheKey, cachedUrl);
+				return cachedUrl;
+			}
+		}
+
 		const networkStrategies: Promise<string | null>[] = [];
 		if (gameId) {
 			networkStrategies.push(
@@ -117,17 +131,45 @@ export async function fetchCover(
 
 		const results = await Promise.all(networkStrategies);
 		const networkCover = results.find((r) => r !== null) ?? null;
-		if (networkCover) {
-			coverCache.set(cacheKey, networkCover);
-			return networkCover;
+
+		let finalCover = networkCover;
+
+		if (
+			!finalCover &&
+			gameId &&
+			(isNintendoSystem(system) || isDvdSystem(system))
+		) {
+			finalCover = await scrapeGameTDB(gameId, system, deps.httpRepository);
 		}
 
-		if (gameId && (isNintendoSystem(system) || isDvdSystem(system))) {
-			const scraped = await scrapeGameTDB(gameId, system, deps.httpRepository);
-			if (scraped) {
-				coverCache.set(cacheKey, scraped);
-				return scraped;
+		if (finalCover) {
+			if (cacheDir) {
+				const sanitizedKey = cacheKey.replace(/[^a-zA-Z0-9]/g, "_");
+				const cachedPath = await deps.fileSystem.joinPath(
+					cacheDir,
+					`${sanitizedKey}.png`,
+				);
+				try {
+					const response = await deps.httpRepository.fetch(finalCover, {
+						method: "GET",
+					});
+					if (response.ok) {
+						const buffer = await response.arrayBuffer();
+						await deps.fileSystem.writeBytesFile(
+							cachedPath,
+							new Uint8Array(buffer),
+						);
+						finalCover = deps.fileSystem.convertFileSource(cachedPath);
+					}
+				} catch (e) {
+					console.error(
+						`[CoverArt] Failed to cache cover for ${gameId ?? filename}:`,
+						e,
+					);
+				}
 			}
+			coverCache.set(cacheKey, finalCover);
+			return finalCover;
 		}
 
 		console.warn(`[CoverArt] All strategies failed for ${filename}`);
@@ -324,14 +366,19 @@ async function checkFirstUrl(
 	urls: string[],
 	httpRepository: Pick<IHttpRepository, "fetch">,
 ): Promise<string | null> {
-	for (const url of urls) {
-		const ok = await checkUrl(url, httpRepository);
-		if (ok) {
-			return url;
-		}
+	try {
+		return await Promise.any(
+			urls.map(async (url) => {
+				const ok = await checkUrl(url, httpRepository);
+				if (!ok) {
+					throw new Error("not found");
+				}
+				return url;
+			}),
+		);
+	} catch {
+		return null;
 	}
-
-	return null;
 }
 
 function getGameTdbRegions(gameId: string): string[] {

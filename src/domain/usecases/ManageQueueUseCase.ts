@@ -2,12 +2,17 @@ import { v4 as uuidv4 } from "uuid";
 import type { JobProps } from "../entities/Job";
 import type { IFileSystemRepository } from "../repositories/IFileSystemRepository";
 import type { IJobRepository } from "../repositories/IJobRepository";
+import {
+	type ConflictReport,
+	QueueAnalyzerService,
+} from "../services/QueueAnalyzerService";
 import { isCdSystem } from "../types/platform.types";
 import type {
 	CompressionStrategy,
 	WorkflowType,
 } from "../types/workflow.types";
 import type { DetectSystemUseCase } from "./DetectSystemUseCase";
+import type { ProcessJobSettings } from "./ProcessJobUseCase";
 
 /**
  * Dependencies for ManageQueueUseCase.
@@ -57,6 +62,11 @@ interface BuildJobResult {
 	readonly job?: JobProps;
 	readonly reason?: QueueAddSkipReason;
 	readonly message?: string;
+}
+
+export interface PreparedAddition {
+	readonly report: ConflictReport;
+	readonly invalidResults: QueueAddResult[];
 }
 
 const ARCHIVE_EXTENSIONS = new Set(["zip", "7z", "rar"]);
@@ -176,17 +186,15 @@ export class ManageQueueUseCase {
 	}
 
 	/**
-	 * Add multiple files to the queue.
-	 *
-	 * @param workflow - Target workflow
-	 * @param paths - Array of file paths
+	 * Prepare addition of multiple files, detecting conflicts before committing.
 	 */
-	async addFiles(
+	async prepareAddFiles(
 		workflow: WorkflowType,
 		paths: string[],
+		settings: ProcessJobSettings,
 		onProgress?: QueueAddProgressCallback,
-	): Promise<QueueAddResult[]> {
-		const { fileSystem, jobRepository } = this.deps;
+	): Promise<PreparedAddition> {
+		const { fileSystem } = this.deps;
 		let analyzedFiles = 0;
 		if (onProgress) {
 			onProgress({
@@ -224,43 +232,61 @@ export class ManageQueueUseCase {
 			},
 		);
 
-		const results: QueueAddResult[] = [];
+		const validJobs: JobProps[] = [];
+		const invalidResults: QueueAddResult[] = [];
+
 		for (let index = 0; index < jobs.length; index++) {
 			const result = jobs[index];
 			const filePath = paths[index];
 			const filename = filePath.split(/[\\/]/).pop() ?? "unknown";
 
 			if (result.job) {
-				jobRepository.addJob(workflow, result.job);
-				results.push({ added: true, filePath, filename });
-				continue;
+				validJobs.push(result.job);
+			} else {
+				invalidResults.push({
+					added: false,
+					filePath,
+					filename,
+					reason: result.reason,
+					message: result.message,
+				});
 			}
-
-			results.push({
-				added: false,
-				filePath,
-				filename,
-				reason: result.reason,
-				message: result.message,
-			});
 		}
 
+		const existingJobs = this.deps.jobRepository.getJobs(workflow);
+		const report = QueueAnalyzerService.analyzeConflicts(
+			workflow,
+			validJobs,
+			existingJobs,
+			settings,
+		);
+
+		return { report, invalidResults };
+	}
+
+	/**
+	 * Commit validated jobs to the queue.
+	 */
+	commitAddition(workflow: WorkflowType, jobs: JobProps[]): QueueAddResult[] {
+		const results: QueueAddResult[] = [];
+		for (const job of jobs) {
+			this.deps.jobRepository.addJob(workflow, job);
+			results.push({ added: true, filePath: job.path, filename: job.filename });
+		}
 		return results;
 	}
 
 	/**
-	 * Add all files from folders recursively.
-	 *
-	 * @param workflow - Target workflow
-	 * @param folderPaths - Array of folder paths
+	 * Prepare addition of folders, detecting conflicts before committing.
 	 */
-	async addFolders(
+	async prepareAddFolders(
 		workflow: WorkflowType,
 		folderPaths: string[],
+		settings: ProcessJobSettings,
 		onProgress?: QueueAddProgressCallback,
-	): Promise<QueueAddResult[]> {
+	): Promise<PreparedAddition> {
 		const files = await this.scanFolders(workflow, folderPaths, onProgress);
-		return this.addFiles(workflow, files, onProgress);
+		return this.prepareAddFiles(workflow, files, settings, onProgress);
 	}
 
 	/**

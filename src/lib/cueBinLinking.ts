@@ -1,3 +1,5 @@
+import { getBasename } from "@/lib/utils";
+
 export interface CueBinLinkCandidate {
 	readonly id: string;
 	readonly path: string;
@@ -39,12 +41,6 @@ function getDirectory(path: string): string {
 	const slashIndex = normalized.lastIndexOf("/");
 	if (slashIndex < 0) return ".";
 	return normalized.slice(0, slashIndex).toLowerCase();
-}
-
-function getBasename(path: string): string {
-	const normalized = path.replace(/\\/g, "/");
-	const slashIndex = normalized.lastIndexOf("/");
-	return slashIndex < 0 ? normalized : normalized.slice(slashIndex + 1);
 }
 
 const DESCRIPTOR_EXTENSIONS = new Set(["cue", "ccd", "gdi", "toc"]);

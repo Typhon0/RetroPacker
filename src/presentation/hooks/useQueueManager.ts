@@ -1,14 +1,17 @@
 import { useCallback, useMemo } from "react";
+import type { JobProps } from "../../domain/entities/Job";
 import type { WorkflowType } from "../../domain/types/workflow.types";
 import { DetectSystemUseCase } from "../../domain/usecases/DetectSystemUseCase";
 import {
 	ManageQueueUseCase,
+	type PreparedAddition,
 	type QueueAddProgress,
 	type QueueAddProgressCallback,
 	type QueueAddResult,
 	WORKFLOW_FILE_CONFIGS,
 	type WorkflowFileConfig,
 } from "../../domain/usecases/ManageQueueUseCase";
+import type { ProcessJobSettings } from "../../domain/usecases/ProcessJobUseCase";
 import { useRepositories } from "../context/RepositoryContext";
 
 export interface QueueManager {
@@ -17,21 +20,24 @@ export interface QueueManager {
 		filename: string,
 		size: number,
 	) => Promise<QueueAddResult>;
-	addFiles: (
+	prepareAddFiles: (
 		paths: string[],
+		settings: ProcessJobSettings,
 		onProgress?: QueueAddProgressCallback,
-	) => Promise<QueueAddResult[]>;
-	addFolders: (
+	) => Promise<PreparedAddition>;
+	prepareAddFolders: (
 		folderPaths: string[],
+		settings: ProcessJobSettings,
 		onProgress?: QueueAddProgressCallback,
-	) => Promise<QueueAddResult[]>;
+	) => Promise<PreparedAddition>;
+	commitAddition: (jobs: JobProps[]) => QueueAddResult[];
 	removeJob: (jobId: string) => void;
 	clearQueue: () => void;
 	assignDiscGroups: () => void;
 	fileConfig: WorkflowFileConfig;
 }
 
-export type { QueueAddProgress };
+export type { QueueAddProgress, PreparedAddition };
 export function useQueueManager(workflow: WorkflowType): QueueManager {
 	const { jobRepository, fileSystem, commandExecutor } = useRepositories();
 
@@ -61,22 +67,36 @@ export function useQueueManager(workflow: WorkflowType): QueueManager {
 		[manageQueue, workflow],
 	);
 
-	const addFiles = useCallback(
+	const prepareAddFiles = useCallback(
 		async (
 			paths: string[],
+			settings: ProcessJobSettings,
 			onProgress?: QueueAddProgressCallback,
-		): Promise<QueueAddResult[]> => {
-			return manageQueue.addFiles(workflow, paths, onProgress);
+		): Promise<PreparedAddition> => {
+			return manageQueue.prepareAddFiles(workflow, paths, settings, onProgress);
 		},
 		[manageQueue, workflow],
 	);
 
-	const addFolders = useCallback(
+	const prepareAddFolders = useCallback(
 		async (
 			folderPaths: string[],
+			settings: ProcessJobSettings,
 			onProgress?: QueueAddProgressCallback,
-		): Promise<QueueAddResult[]> => {
-			return manageQueue.addFolders(workflow, folderPaths, onProgress);
+		): Promise<PreparedAddition> => {
+			return manageQueue.prepareAddFolders(
+				workflow,
+				folderPaths,
+				settings,
+				onProgress,
+			);
+		},
+		[manageQueue, workflow],
+	);
+
+	const commitAddition = useCallback(
+		(jobs: JobProps[]): QueueAddResult[] => {
+			return manageQueue.commitAddition(workflow, jobs);
 		},
 		[manageQueue, workflow],
 	);
@@ -100,8 +120,9 @@ export function useQueueManager(workflow: WorkflowType): QueueManager {
 
 	return {
 		addFile,
-		addFiles,
-		addFolders,
+		prepareAddFiles,
+		prepareAddFolders,
+		commitAddition,
 		removeJob,
 		clearQueue,
 		assignDiscGroups,

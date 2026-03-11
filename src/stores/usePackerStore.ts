@@ -121,7 +121,8 @@ export const usePackerStore = create<PackerState>()(
 
 			setActiveWorkflow: (activeWorkflow) => set({ activeWorkflow }),
 			setPreset: (preset) => set({ preset }),
-			setConcurrency: (concurrency) => set({ concurrency }),
+			setConcurrency: (concurrency) =>
+				set({ concurrency: Math.max(1, Math.min(16, concurrency)) }),
 			setCustomCompression: (customCompression) => set({ customCompression }),
 
 			setChdSetting: (key, value) =>

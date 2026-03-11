@@ -1,6 +1,9 @@
 import { CueProcessorService } from "@/services/CueProcessorService";
 import { ProcessRegistry } from "@/services/ProcessRegistry";
+import { ChdmanCommandBuilder } from "../builders/ChdmanCommandBuilder";
+import { DolphinCommandBuilder } from "../builders/DolphinCommandBuilder";
 import type { JobState } from "../entities/JobState";
+import { ProgressParser } from "../parsers/ProgressParser";
 import type {
 	CommandCallbacks,
 	ICommandExecutor,
@@ -8,16 +11,11 @@ import type {
 import type { IDatabaseRepository } from "../repositories/IDatabaseRepository";
 import type { IFileSystemRepository } from "../repositories/IFileSystemRepository";
 import type { INotificationService } from "../repositories/INotificationService";
-import {
-	isDvdSystem,
-	isNintendoPlatform,
-	isNintendoSystem,
-} from "../types/platform.types";
-import {
-	type ChdSettings,
-	type CompressionPreset,
-	type DolphinSettings,
-	getCompressionLevel,
+import { isNintendoPlatform, isNintendoSystem } from "../types/platform.types";
+import type {
+	ChdSettings,
+	CompressionPreset,
+	DolphinSettings,
 } from "../types/settings.types";
 import type { WorkflowType } from "../types/workflow.types";
 
@@ -362,18 +360,18 @@ export class ProcessJobUseCase {
 					}
 
 					if (!usesDolphin) {
-						this.parseProgress(line, job, emitProgress);
+						ProgressParser.parseProgress(line, job, emitProgress);
 					} else if (workflow === "info") {
-						this.parseDolphinInfo(line, job);
+						ProgressParser.parseDolphinInfo(line, job);
 					}
 				},
 				onStderr: (line) => {
-					if (usesDolphin && this.shouldIgnoreDolphinStderr(line)) {
+					if (usesDolphin && ProgressParser.shouldIgnoreDolphinStderr(line)) {
 						return;
 					}
 					job.appendLog(`[stderr] ${line}`);
 					if (!usesDolphin) {
-						this.parseProgress(line, job, emitProgress);
+						ProgressParser.parseProgress(line, job, emitProgress);
 					}
 				},
 				onClose: (result) => {
@@ -610,183 +608,27 @@ export class ProcessJobUseCase {
 		usesDolphin: boolean,
 		overrideInputPath?: string,
 	): Promise<string[]> {
+		const outputBaseName = this.getOutputBaseName(job.filename);
 		if (usesDolphin) {
-			return this.buildDolphinArgs(job, outputDir, workflow, settings);
+			return DolphinCommandBuilder.buildArgs(
+				job,
+				outputDir,
+				workflow,
+				settings,
+				this.deps.fileSystem,
+				outputBaseName,
+				ProcessJobUseCase.TEMP_DIR_NAME,
+			);
 		}
-		return this.buildChdmanArgs(
+		return ChdmanCommandBuilder.buildArgs(
 			job,
 			outputDir,
 			workflow,
 			settings,
+			this.deps.fileSystem,
+			outputBaseName,
 			overrideInputPath,
 		);
-	}
-
-	/**
-	 * Build chdman command arguments.
-	 */
-	private async buildChdmanArgs(
-		job: JobState,
-		outputDir: string,
-		workflow: WorkflowType,
-		settings: ProcessJobSettings,
-		overrideInputPath?: string,
-	): Promise<string[]> {
-		const { fileSystem } = this.deps;
-		const { preset, customCompression, chd } = settings;
-		const outputBaseName = this.getOutputBaseName(job.filename);
-		const inputPath = overrideInputPath ?? job.path;
-
-		let args: string[] = [];
-		const effectiveSystem =
-			job.platformOverride.value?.toLowerCase() ??
-			job.system.value.toLowerCase();
-
-		// Determine strict CD vs DVD strategy based on effective system
-		const usesDvdStrategy = isDvdSystem(effectiveSystem);
-		const compressCmd = usesDvdStrategy ? "createdvd" : "createcd";
-		const extractCmd = usesDvdStrategy ? "extractdvd" : "extractcd";
-
-		if (workflow === "compress") {
-			const outputPath = await fileSystem.joinPath(
-				outputDir,
-				`${outputBaseName}.chd`,
-			);
-			args = [compressCmd, "-i", inputPath, "-o", outputPath];
-
-			// Compression args
-			const compressionArgs = this.getChdCompressionArgs(
-				preset,
-				customCompression,
-			);
-			args.push(...compressionArgs);
-
-			// Hunk size
-			if (chd.hunkSize) {
-				args.push("-hs", chd.hunkSize.toString());
-			} else if (usesDvdStrategy) {
-				args.push("-hs", "2048"); // Strict 2048 for DVD systems
-			}
-
-			args.push("-f"); // Force overwrite
-		} else if (workflow === "extract") {
-			if (extractCmd === "extractdvd") {
-				const outputPath = await fileSystem.joinPath(
-					outputDir,
-					`${outputBaseName}.iso`,
-				);
-				args = [extractCmd, "-i", job.path, "-o", outputPath, "-f"];
-			} else {
-				const outputCue = await fileSystem.joinPath(
-					outputDir,
-					`${outputBaseName}.cue`,
-				);
-				const outputBin = await fileSystem.joinPath(
-					outputDir,
-					`${outputBaseName}.bin`,
-				);
-				args = [
-					"extractcd",
-					"-i",
-					job.path,
-					"-o",
-					outputCue,
-					"-ob",
-					outputBin,
-					"-f",
-				];
-			}
-		} else if (workflow === "verify") {
-			args = ["verify", "-i", job.path];
-		} else if (workflow === "info") {
-			args = ["info", "-i", job.path];
-		}
-
-		return args;
-	}
-
-	/**
-	 * Build DolphinTool command arguments.
-	 */
-	private async buildDolphinArgs(
-		job: JobState,
-		outputDir: string,
-		workflow: WorkflowType,
-		settings: ProcessJobSettings,
-	): Promise<string[]> {
-		const { fileSystem } = this.deps;
-		const { preset, dolphin } = settings;
-		const level = getCompressionLevel(preset);
-		const outputBaseName = this.getOutputBaseName(job.filename);
-
-		// User dir for temp files — reuse the shared temp dir already created by execute()
-		const userDir = await fileSystem.joinPath(
-			outputDir,
-			ProcessJobUseCase.TEMP_DIR_NAME,
-		);
-		await fileSystem.createDirectory(userDir);
-		const baseArgs = (cmd: string) => [cmd, "-u", userDir];
-
-		let args: string[] = [];
-
-		if (workflow === "compress") {
-			const ext =
-				dolphin.format === "iso"
-					? "iso"
-					: dolphin.format === "gcz"
-						? "gcz"
-						: "rvz";
-			const outputPath = await fileSystem.joinPath(
-				outputDir,
-				`${outputBaseName}.${ext}`,
-			);
-
-			args = [
-				...baseArgs("convert"),
-				"-i",
-				job.path,
-				"-o",
-				outputPath,
-				"-f",
-				dolphin.format,
-				"-b",
-				dolphin.blockSize.toString(),
-			];
-
-			if (dolphin.scrub) {
-				args.push("-s");
-			}
-
-			if (dolphin.format !== "iso" && dolphin.compressionAlgorithm !== "none") {
-				args.push("-c", dolphin.compressionAlgorithm, "-l", level.toString());
-			}
-		} else if (workflow === "extract") {
-			const outputPath = await fileSystem.joinPath(
-				outputDir,
-				`${outputBaseName}.iso`,
-			);
-			args = [
-				...baseArgs("convert"),
-				"-i",
-				job.path,
-				"-o",
-				outputPath,
-				"-f",
-				"iso",
-			];
-		} else if (workflow === "verify") {
-			args = [
-				...baseArgs("verify"),
-				"-i",
-				job.path,
-				"-a",
-				dolphin.verifyAlgorithm,
-			];
-		} else if (workflow === "info") {
-			args = [...baseArgs("header"), "-i", job.path];
-		}
-
-		return args;
 	}
 
 	/**
@@ -831,101 +673,6 @@ export class ProcessJobUseCase {
 				);
 			}
 		}
-	}
-
-	/**
-	 * Get chdman compression arguments for a preset.
-	 */
-	private getChdCompressionArgs(
-		preset: CompressionPreset,
-		customCompression: string,
-	): string[] {
-		switch (preset) {
-			case "balanced":
-				return ["-c", "lzma,zlib,huff"];
-			case "max":
-				return ["-c", "lzma"];
-			case "fast":
-				return ["-c", "zstd"];
-			case "raw":
-				return ["-c", "none"];
-			case "custom":
-				return ["-c", customCompression || "lzma,zlib,huff"];
-			default:
-				return ["-c", "lzma,zlib,huff"];
-		}
-	}
-
-	/**
-	 * Parse progress from chdman output.
-	 */
-	private parseProgress(
-		line: string,
-		job: JobState,
-		emitProgress: (progress: number, etaSeconds?: number) => void,
-	): void {
-		const ratioMatch = line.match(/final ratio\s*=\s*(\d+(?:\.\d+)?)%/i);
-		if (ratioMatch) {
-			const ratio = Number.parseFloat(ratioMatch[1]);
-			if (Number.isFinite(ratio)) {
-				job.setCompressionRatio(ratio);
-			}
-		}
-
-		const match = line.match(
-			/(?:Compressing|Extracting|Processing|Verifying),\s+(\d+\.?\d*)%\s+complete/,
-		);
-		if (match) {
-			const percentage = parseFloat(match[1]);
-			const startTime = job.startTime.value;
-
-			let etaSeconds: number | undefined;
-			if (startTime && percentage > 0) {
-				const elapsedSeconds = (Date.now() - startTime) / 1000;
-				const totalEst = (elapsedSeconds / percentage) * 100;
-				etaSeconds = Math.max(0, totalEst - elapsedSeconds);
-			}
-
-			emitProgress(percentage, etaSeconds);
-		}
-	}
-
-	/**
-	 * Parse metadata from DolphinTool header/info output.
-	 */
-	private parseDolphinInfo(line: string, job: JobState): void {
-		const lineTrimmed = line.trim();
-		const updates: Partial<{
-			gameId: string;
-			gameTitle: string;
-			region: string;
-		}> = {};
-
-		// Parse Standard DolphinTool Header Output
-		// Format: "Key: Value"
-
-		if (lineTrimmed.startsWith("Game ID:")) {
-			updates.gameId = lineTrimmed.split(":")[1].trim();
-		} else if (lineTrimmed.startsWith("Internal Name:")) {
-			updates.gameTitle = lineTrimmed.split(":")[1].trim();
-		} else if (lineTrimmed.startsWith("Region:")) {
-			updates.region = lineTrimmed.split(":")[1].trim();
-		} else if (lineTrimmed.startsWith("Country:")) {
-			// Country is often more specific than Region, but we can store it or ignore for now
-			// If Region is missing, maybe use Country?
-			// updates.country = ... (not tracked yet)
-		} else if (lineTrimmed.startsWith("Revision:")) {
-			// updates.revision = ...
-		}
-
-		if (Object.keys(updates).length > 0) {
-			job.applyUpdates(updates);
-		}
-	}
-
-	private shouldIgnoreDolphinStderr(line: string): boolean {
-		const normalized = line.trim().toLowerCase();
-		return normalized.includes("no bundle id found");
 	}
 
 	private createProgressEmitter(

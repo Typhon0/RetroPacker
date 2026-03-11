@@ -3,13 +3,18 @@ import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import type { JobProps } from "@/domain/entities/Job";
+import type { JobConflict } from "@/domain/services/QueueAnalyzerService";
 import type { WorkflowType } from "@/domain/types/workflow.types";
 import { cn } from "@/lib/utils";
 import { useRepositories } from "@/presentation/context/RepositoryContext";
 import {
+	type PreparedAddition,
 	type QueueAddProgress,
 	useQueueManager,
 } from "@/presentation/hooks/useQueueManager";
+import { usePackerStore } from "@/stores/usePackerStore";
+import { ConflictDialog } from "./ConflictDialog";
 
 interface DropZoneProps {
 	workflow: WorkflowType;
@@ -26,9 +31,14 @@ export function DropZone({ workflow }: DropZoneProps) {
 		undefined,
 	);
 	const [analysisElapsedMs, setAnalysisElapsedMs] = useState(0);
+	const [preparedAddition, setPreparedAddition] =
+		useState<PreparedAddition | null>(null);
+	const [isConflictDialogOpen, setIsConflictDialogOpen] = useState(false);
 
-	// Use the new Clean Architecture hook
-	const { addFile, addFolders, fileConfig } = useQueueManager(workflow);
+	// Settings & Hooks
+	const settings = usePackerStore();
+	const { prepareAddFiles, prepareAddFolders, commitAddition, fileConfig } =
+		useQueueManager(workflow);
 	const { dialogRepository, fileSystem } = useRepositories();
 
 	const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -41,93 +51,98 @@ export function DropZone({ workflow }: DropZoneProps) {
 		setIsDragging(false);
 	}, []);
 
-	const processFiles = useCallback(
-		async (files: File[]) => {
-			let unsupportedMessage: string | undefined;
-			setAnalysisProgress({
-				phase: "analyzing",
-				discoveredFiles: files.length,
-				analyzedFiles: 0,
-				totalFiles: files.length,
-			});
+	useEffect(() => {
+		if (!isAnalyzing || analysisStartAt === undefined) {
+			return;
+		}
 
-			for (const [index, file] of files.entries()) {
-				// @ts-expect-error - Tauri provides path on File objects
-				let filePath = file.path;
+		const timer = setInterval(() => {
+			setAnalysisElapsedMs(Date.now() - analysisStartAt);
+		}, 300);
 
-				if (!filePath) {
-					// Mock mode for browser development
-					const isTauri =
-						typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-					if (!isTauri) {
-						console.log("[MOCK] Browser detected");
-						filePath = `/mock/${file.name}`;
-					} else {
-						continue;
-					}
-				}
+		return () => clearInterval(timer);
+	}, [analysisStartAt, isAnalyzing]);
 
-				const result = await addFile(filePath, file.name, file.size);
-				setAnalysisProgress({
-					phase: "analyzing",
-					discoveredFiles: files.length,
-					analyzedFiles: index + 1,
-					totalFiles: files.length,
-					currentPath: filePath,
-				});
-				if (
-					!result.added &&
-					result.message !== undefined &&
-					unsupportedMessage === undefined
-				) {
-					unsupportedMessage = result.message;
-				}
-			}
-
-			setDropError(unsupportedMessage);
-		},
-		[addFile],
-	);
-
-	const processPaths = useCallback(
+	const processPathList = useCallback(
 		async (paths: string[]) => {
-			let unsupportedMessage: string | undefined;
-			setAnalysisProgress({
-				phase: "analyzing",
-				discoveredFiles: paths.length,
-				analyzedFiles: 0,
-				totalFiles: paths.length,
-			});
+			if (paths.length === 0) return;
 
-			for (const [index, filePath] of paths.entries()) {
-				const name = filePath.split(/[\\/]/).pop() || "unknown";
-				let size = 0;
+			const validFilePaths: string[] = [];
+			const validFolderPaths: string[] = [];
+
+			for (const filePath of paths) {
 				try {
-					const fileStat = await fileSystem.getFileInfo(filePath);
-					size = fileStat.size;
+					const info = await fileSystem.getFileInfo(filePath);
+					if (info.isDirectory) {
+						validFolderPaths.push(filePath);
+					} else {
+						validFilePaths.push(filePath);
+					}
 				} catch (e) {
-					console.warn(`Failed to stat file ${filePath}, assuming size 0`, e);
-				}
-				const result = await addFile(filePath, name, size);
-				setAnalysisProgress({
-					phase: "analyzing",
-					discoveredFiles: paths.length,
-					analyzedFiles: index + 1,
-					totalFiles: paths.length,
-					currentPath: filePath,
-				});
-				if (
-					!result.added &&
-					result.message !== undefined &&
-					unsupportedMessage === undefined
-				) {
-					unsupportedMessage = result.message;
+					console.warn(`Failed to stat path ${filePath}`, e);
+					// Fallback to file processing if stat fails
+					validFilePaths.push(filePath);
 				}
 			}
 
-			setDropError(unsupportedMessage);
+			try {
+				const combinedValidJobs: JobProps[] = [];
+				const combinedConflicts: JobConflict[] = [];
+				let fallbackError: string | undefined;
+
+				if (validFilePaths.length > 0) {
+					const addition = await prepareAddFiles(
+						validFilePaths,
+						settings,
+						setAnalysisProgress,
+					);
+					combinedValidJobs.push(...addition.report.validJobs);
+					combinedConflicts.push(...addition.report.conflicts);
+
+					const unsupported = addition.invalidResults.find(
+						(result) => !result.added && result.message !== undefined,
+					);
+					if (unsupported && !fallbackError)
+						fallbackError = unsupported.message;
+				}
+
+				if (validFolderPaths.length > 0) {
+					const addition = await prepareAddFolders(
+						validFolderPaths,
+						settings,
+						setAnalysisProgress,
+					);
+					combinedValidJobs.push(...addition.report.validJobs);
+					combinedConflicts.push(...addition.report.conflicts);
+
+					const unsupported = addition.invalidResults.find(
+						(result) => !result.added && result.message !== undefined,
+					);
+					if (unsupported && !fallbackError)
+						fallbackError = unsupported.message;
+				}
+
+				setDropError(fallbackError);
+
+				if (combinedConflicts.length > 0) {
+					setPreparedAddition({
+						report: {
+							hasConflicts: true,
+							conflicts: combinedConflicts,
+							validJobs: combinedValidJobs,
+						},
+						invalidResults: [],
+					});
+					setIsConflictDialogOpen(true);
+				} else if (combinedValidJobs.length > 0) {
+					commitAddition(combinedValidJobs);
+				}
+			} catch (e) {
+				console.error("Failed to process paths", e);
+				setDropError("An error occurred while processing paths.");
+			}
 		},
-		[addFile, fileSystem],
+		[prepareAddFiles, prepareAddFolders, commitAddition, settings, fileSystem],
 	);
 
 	const beginAnalysis = useCallback(() => {
@@ -146,17 +161,39 @@ export function DropZone({ workflow }: DropZoneProps) {
 		async (e: React.DragEvent) => {
 			e.preventDefault();
 			setIsDragging(false);
+
+			const isTauri =
+				typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+			if (isTauri) {
+				// Tauri's window-level onDragDropEvent handles this for reliable folder support
+				return;
+			}
+
 			beginAnalysis();
 			setDropError(undefined);
 
 			try {
 				const files = Array.from(e.dataTransfer.files);
-				await processFiles(files);
+				const validPaths: string[] = [];
+				for (const file of files) {
+					// @ts-expect-error - Tauri provides path on File objects
+					let filePath = file.path;
+
+					if (!filePath) {
+						// Mock mode for browser development
+						console.log("[MOCK] Browser detected");
+						filePath = `/mock/${file.name}`;
+					}
+					validPaths.push(filePath);
+				}
+				await processPathList(validPaths);
+			} catch (err) {
+				console.error("Mock drag drop error:", err);
 			} finally {
 				endAnalysis();
 			}
 		},
-		[beginAnalysis, endAnalysis, processFiles],
+		[beginAnalysis, endAnalysis, processPathList],
 	);
 
 	const handleClick = useCallback(async () => {
@@ -176,7 +213,7 @@ export function DropZone({ workflow }: DropZoneProps) {
 				beginAnalysis();
 				try {
 					const paths = Array.isArray(selected) ? selected : [selected];
-					await processPaths(paths);
+					await processPathList(paths);
 				} finally {
 					endAnalysis();
 				}
@@ -185,7 +222,13 @@ export function DropZone({ workflow }: DropZoneProps) {
 			console.error("Failed to open file dialog", err);
 			endAnalysis();
 		}
-	}, [beginAnalysis, dialogRepository, endAnalysis, fileConfig, processPaths]);
+	}, [
+		beginAnalysis,
+		dialogRepository,
+		endAnalysis,
+		fileConfig,
+		processPathList,
+	]);
 
 	const handleAddFolder = useCallback(
 		async (e: React.MouseEvent) => {
@@ -201,15 +244,27 @@ export function DropZone({ workflow }: DropZoneProps) {
 					beginAnalysis();
 					try {
 						const paths = Array.isArray(selected) ? selected : [selected];
-						// Use the Clean Architecture hook for folder processing
-						const results = await addFolders(paths, (progress) => {
-							setAnalysisProgress(progress);
-						});
-						const unsupported = results.find(
+
+						const addition = await prepareAddFolders(
+							paths,
+							settings,
+							(progress) => {
+								setAnalysisProgress(progress);
+							},
+						);
+
+						const unsupported = addition.invalidResults.find(
 							(result) => !result.added && result.message !== undefined,
 						);
 						if (unsupported) {
 							setDropError(unsupported.message);
+						}
+
+						if (addition.report.hasConflicts) {
+							setPreparedAddition(addition);
+							setIsConflictDialogOpen(true);
+						} else {
+							commitAddition(addition.report.validJobs);
 						}
 					} finally {
 						endAnalysis();
@@ -219,8 +274,60 @@ export function DropZone({ workflow }: DropZoneProps) {
 				console.error("Failed to open directory dialog", err);
 			}
 		},
-		[addFolders, beginAnalysis, dialogRepository, endAnalysis],
+		[
+			prepareAddFolders,
+			commitAddition,
+			beginAnalysis,
+			dialogRepository,
+			endAnalysis,
+			settings,
+		],
 	);
+
+	useEffect(() => {
+		const isTauri =
+			typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+		if (!isTauri) return;
+
+		let unlisten: (() => void) | null = null;
+		let isMounted = true;
+
+		import("@tauri-apps/api/webviewWindow")
+			.then(({ getCurrentWebviewWindow }) => {
+				return getCurrentWebviewWindow().onDragDropEvent((event) => {
+					if (!isMounted || isAnalyzing) return;
+
+					if (event.payload.type === "enter" || event.payload.type === "over") {
+						setIsDragging(true);
+					} else if (event.payload.type === "leave") {
+						setIsDragging(false);
+					} else if (event.payload.type === "drop") {
+						setIsDragging(false);
+						const paths = event.payload.paths;
+						if (paths && paths.length > 0) {
+							beginAnalysis();
+							setDropError(undefined);
+							processPathList(paths).finally(endAnalysis);
+						}
+					}
+				});
+			})
+			.then((unlistenFn) => {
+				if (isMounted) {
+					unlisten = unlistenFn;
+				} else if (unlistenFn) {
+					unlistenFn();
+				}
+			})
+			.catch((err) => {
+				console.error("Failed to setup Tauri drag/drop listener:", err);
+			});
+
+		return () => {
+			isMounted = false;
+			if (unlisten) unlisten();
+		};
+	}, [beginAnalysis, endAnalysis, processPathList, isAnalyzing]);
 
 	useEffect(() => {
 		if (!isAnalyzing || analysisStartAt === undefined) {
@@ -271,10 +378,12 @@ export function DropZone({ workflow }: DropZoneProps) {
 			onDragOver={handleDragOver}
 			onDragLeave={handleDragLeave}
 			onDrop={handleDrop}
-			onClick={!isAnalyzing ? handleClick : undefined}
-			onKeyDown={!isAnalyzing ? handleKeyDown : undefined}
+			onClick={!isAnalyzing && !isConflictDialogOpen ? handleClick : undefined}
+			onKeyDown={
+				!isAnalyzing && !isConflictDialogOpen ? handleKeyDown : undefined
+			}
 			role="button"
-			tabIndex={isAnalyzing ? -1 : 0}
+			tabIndex={isAnalyzing || isConflictDialogOpen ? -1 : 0}
 			className={cn(
 				"border-2 border-dashed rounded-xl p-6 transition-all duration-300 flex flex-col items-center justify-center text-center cursor-pointer relative group min-h-[200px]",
 				isDragging
@@ -340,6 +449,22 @@ export function DropZone({ workflow }: DropZoneProps) {
 					)}
 				</>
 			)}
+
+			<ConflictDialog
+				isOpen={isConflictDialogOpen}
+				report={preparedAddition?.report ?? null}
+				onClose={() => {
+					setIsConflictDialogOpen(false);
+					setPreparedAddition(null);
+				}}
+				onConfirm={() => {
+					if (preparedAddition) {
+						commitAddition(preparedAddition.report.validJobs);
+					}
+					setIsConflictDialogOpen(false);
+					setPreparedAddition(null);
+				}}
+			/>
 		</div>
 	);
 }

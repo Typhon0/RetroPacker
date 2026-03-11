@@ -1,3 +1,4 @@
+import { getBasename } from "@/lib/utils";
 import type { ICommandExecutor } from "../repositories/ICommandExecutor";
 import type { IFileSystemRepository } from "../repositories/IFileSystemRepository";
 import type { DetectedSystem } from "../types/platform.types";
@@ -508,10 +509,11 @@ export class DetectSystemUseCase {
 					return system;
 				}
 
-				tail =
+				tail = new Uint8Array(
 					scanBuffer.length > DEEP_SCAN_OVERLAP_BYTES
 						? scanBuffer.slice(scanBuffer.length - DEEP_SCAN_OVERLAP_BYTES)
-						: scanBuffer;
+						: scanBuffer,
+				);
 				cursor += chunk.length;
 
 				if (chunk.length < readLength) {
@@ -640,7 +642,7 @@ export class DetectSystemUseCase {
 		}
 
 		const rawReference = match[1].trim();
-		const binFilename = this.basename(rawReference);
+		const binFilename = getBasename(rawReference);
 		const dir = await fileSystem.dirname(cuePath);
 		const binPath = await fileSystem.joinPath(dir, binFilename);
 
@@ -1014,7 +1016,7 @@ export class DetectSystemUseCase {
 		try {
 			const { fileSystem } = this.deps;
 			const dir = await fileSystem.dirname(path);
-			const filename = this.basename(path);
+			const filename = getBasename(path);
 			const baseName = filename.replace(/\.[^.]+$/, "");
 			const companionCue = await fileSystem.joinPath(dir, `${baseName}.cue`);
 			if (!(await fileSystem.exists(companionCue))) {
@@ -1032,9 +1034,5 @@ export class DetectSystemUseCase {
 			return "PS1";
 		}
 		return "Unknown";
-	}
-
-	private basename(path: string): string {
-		return path.replace(/^.*[\\/]/, "");
 	}
 }

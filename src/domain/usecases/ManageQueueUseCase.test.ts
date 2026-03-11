@@ -9,6 +9,23 @@ import {
 	UNSUPPORTED_PS3_EXECUTABLE_MESSAGE,
 	WORKFLOW_FILE_CONFIGS,
 } from "./ManageQueueUseCase";
+import type { ProcessJobSettings } from "./ProcessJobUseCase";
+
+const defaultSettings: ProcessJobSettings = {
+	preset: "balanced",
+	customCompression: "",
+	chd: { hunkSize: undefined, mediaType: "auto" },
+	dolphin: {
+		blockSize: 131072,
+		format: "rvz",
+		compressionAlgorithm: "zstd",
+		scrub: false,
+		verifyAlgorithm: "md5",
+		extractGameOnly: false,
+	},
+	deleteSourceAfterSuccess: false,
+	skipExisting: false,
+};
 
 // ─── Mocks ───────────────────────────────────────────────────────
 
@@ -251,30 +268,37 @@ describe("ManageQueueUseCase", () => {
 		});
 	});
 
-	// ─── addFiles (batch) ────────────────────────────────────────
+	// ─── prepareAddFiles (batch) ─────────────────────────────────
 
-	describe("addFiles", () => {
-		it("adds multiple files concurrently", async () => {
+	describe("prepareAddFiles", () => {
+		it("prepares multiple files concurrently without automatic commit", async () => {
 			const { useCase, jobRepository } = createUseCase();
-			await useCase.addFiles("compress", [
-				"/roms/game1.iso",
-				"/roms/game2.iso",
-				"/roms/game3.iso",
-			]);
+			const addition = await useCase.prepareAddFiles(
+				"compress",
+				["/roms/game1.iso", "/roms/game2.iso", "/roms/game3.iso"],
+				defaultSettings,
+			);
 
+			expect(jobRepository.addJob).not.toHaveBeenCalled();
+			expect(addition.report.validJobs).toHaveLength(3);
+
+			// Commit manually
+			useCase.commitAddition("compress", addition.report.validJobs);
 			expect(jobRepository.addJob).toHaveBeenCalledTimes(3);
 		});
 
 		it("skips invalid extensions in batch", async () => {
 			const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
-			const { useCase, jobRepository } = createUseCase();
-			await useCase.addFiles("compress", [
-				"/roms/game.iso",
-				"/roms/readme.txt",
-				"/roms/game.cue",
-			]);
+			const { useCase } = createUseCase();
+			const addition = await useCase.prepareAddFiles(
+				"compress",
+				["/roms/game.iso", "/roms/readme.txt", "/roms/other_game.cue"],
+				defaultSettings,
+			);
 
-			expect(jobRepository.addJob).toHaveBeenCalledTimes(2);
+			expect(addition.report.validJobs).toHaveLength(2);
+			expect(addition.invalidResults).toHaveLength(1);
+			expect(addition.invalidResults[0].reason).toBe("invalid_extension");
 			spy.mockRestore();
 		});
 
@@ -282,9 +306,10 @@ describe("ManageQueueUseCase", () => {
 			const { useCase } = createUseCase();
 			const onProgress = vi.fn();
 
-			await useCase.addFiles(
+			await useCase.prepareAddFiles(
 				"compress",
 				["/roms/game1.iso", "/roms/game2.iso"],
+				defaultSettings,
 				onProgress,
 			);
 
@@ -306,7 +331,7 @@ describe("ManageQueueUseCase", () => {
 		});
 	});
 
-	describe("addFolders", () => {
+	describe("prepareAddFolders", () => {
 		it("reports scanning progress while walking folders", async () => {
 			const { useCase } = createUseCase({
 				fileSystem: {
@@ -316,7 +341,12 @@ describe("ManageQueueUseCase", () => {
 			});
 			const onProgress = vi.fn();
 
-			await useCase.addFolders("compress", ["/roms"], onProgress);
+			await useCase.prepareAddFolders(
+				"compress",
+				["/roms"],
+				defaultSettings,
+				onProgress,
+			);
 
 			const updates = onProgress.mock.calls.map(
 				(call) =>

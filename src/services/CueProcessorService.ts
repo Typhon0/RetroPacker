@@ -10,6 +10,7 @@
  */
 
 import type { IFileSystemRepository } from "@/domain/repositories/IFileSystemRepository";
+import { getBasename } from "@/lib/utils";
 
 /**
  * Regex to match the FILE directive in a CUE sheet.
@@ -125,8 +126,7 @@ export class CueProcessorService {
 		let modified = false;
 		for (const directive of directives) {
 			const originalReference = directive.fileReference.trim();
-			const strippedReference =
-				CueProcessorService.getBasename(originalReference);
+			const strippedReference = getBasename(originalReference);
 			let resolvedFilename = strippedReference;
 
 			if (strippedReference !== originalReference) {
@@ -174,7 +174,7 @@ export class CueProcessorService {
 			return { success: true };
 		}
 
-		const filename = CueProcessorService.getBasename(cuePath);
+		const filename = getBasename(cuePath);
 		const tempCuePath = await fileSystem.joinPath(tempDir, filename);
 		await fileSystem.writeTextFile(tempCuePath, lines.join("\n"));
 
@@ -191,7 +191,7 @@ export class CueProcessorService {
 		tempDir: string,
 		fileSystem: IFileSystemRepository,
 	): Promise<PrepareCueResult> {
-		const binFilename = CueProcessorService.getBasename(binPath);
+		const binFilename = getBasename(binPath);
 		const baseName = binFilename.replace(/\.[^.]+$/, "");
 		const binDir = await fileSystem.dirname(binPath);
 		const companionCuePath = await fileSystem.joinPath(
@@ -304,7 +304,7 @@ export class CueProcessorService {
 		binDir: string,
 		fileSystem: IFileSystemRepository,
 	): Promise<boolean> {
-		const binFilename = CueProcessorService.getBasename(binPath);
+		const binFilename = getBasename(binPath);
 		const baseNoExt = binFilename.replace(/\.[^.]+$/, "");
 		const currentTrackRoot = CueProcessorService.extractTrackRoot(baseNoExt);
 		if (!currentTrackRoot) {
@@ -345,9 +345,5 @@ export class CueProcessorService {
 		if (!match) return undefined;
 		const parsed = Number.parseInt(match[1], 10);
 		return Number.isNaN(parsed) ? undefined : parsed;
-	}
-
-	private static getBasename(path: string): string {
-		return path.replace(/^.*[\\/]/, "");
 	}
 }

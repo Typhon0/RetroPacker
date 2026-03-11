@@ -3,7 +3,7 @@ import { useShallow } from "zustand/react/shallow";
 import type { JobState } from "@/domain/entities/JobState";
 import type { WorkflowType } from "@/domain/types/workflow.types";
 import { useSignalValue } from "@/hooks/useSignalValue";
-import { buildCueBinLinkMap } from "@/lib/cueBinLinking";
+import { filterVisibleCueBinJobs } from "@/lib/cueBinLinking";
 import { jobStore } from "@/stores/JobStore";
 import { ProcessJobUseCase } from "../domain/usecases/ProcessJobUseCase";
 import { useRepositories } from "../presentation/context/RepositoryContext";
@@ -78,19 +78,6 @@ export function planQueueDispatch(params: {
 	};
 }
 
-function getVisibleQueue(queue: readonly JobState[]): JobState[] {
-	const hiddenIds = buildCueBinLinkMap(
-		queue.map((job) => ({
-			id: job.id,
-			path: job.path,
-			filename: job.filename,
-			system: job.system.value,
-			platformOverride: job.platformOverride.value,
-		})),
-	).hiddenCompanionJobIds;
-	return queue.filter((job) => !hiddenIds.has(job.id));
-}
-
 /**
  * Hook to process jobs in a specific workflow queue.
  * Uses signal-derived queue stats so progress ticks do not wake the processor.
@@ -160,7 +147,7 @@ export function useQueueProcessor(workflow: WorkflowType) {
 				void (async () => {
 					try {
 						const queue = jobStore.getQueue(workflow);
-						const visibleQueue = getVisibleQueue(queue);
+						const visibleQueue = filterVisibleCueBinJobs(queue);
 						const completedPaths: string[] = [];
 
 						for (const job of visibleQueue) {
@@ -221,7 +208,7 @@ export function useQueueProcessor(workflow: WorkflowType) {
 	useEffect(() => {
 		void dispatchRevision;
 		const processQueue = async () => {
-			const queue = getVisibleQueue(jobStore.getQueue(workflow));
+			const queue = filterVisibleCueBinJobs(jobStore.getQueue(workflow));
 			const latestStartRequests = jobStore.startRequests[workflow].value;
 			const plan = planQueueDispatch({
 				queue,
