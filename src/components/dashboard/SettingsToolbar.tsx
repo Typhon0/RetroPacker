@@ -17,13 +17,13 @@ export function SettingsToolbar() {
 	const { preset, setPreset, platform, setPlatform } = usePackerStore();
 
 	return (
-		<div className="flex items-center gap-2 bg-card border rounded-md p-1 shadow-sm h-10 w-fit">
+		<div className="flex items-center gap-1 bg-card border border-border rounded-lg p-1 h-10 max-w-full overflow-hidden">
 			{/* Platform Selector */}
 			<Select
 				value={platform}
 				onValueChange={(val) => setPlatform(val as Platform)}
 			>
-				<SelectTrigger className="h-8 border-none bg-transparent hover:bg-muted/50 focus:ring-0 w-[120px] text-muted-foreground data-[state=open]:text-foreground">
+				<SelectTrigger className="h-8 flex-1 min-w-[80px] max-w-[120px] text-xs bg-transparent dark:bg-transparent dark:hover:bg-transparent">
 					<SelectValue placeholder="Platform" />
 				</SelectTrigger>
 				<SelectContent>
@@ -37,16 +37,16 @@ export function SettingsToolbar() {
 				</SelectContent>
 			</Select>
 
-			<div className="w-[1px] h-4 bg-border mx-1" />
+			<div className="w-[1px] h-4 bg-border mx-1 shrink-0" />
 
 			{/* Preset Selector */}
 			<Select
 				value={preset}
 				onValueChange={(val) => setPreset(val as CompressionPreset)}
 			>
-				<SelectTrigger className="h-8 border-none bg-transparent hover:bg-muted/50 focus:ring-0 w-[140px] text-muted-foreground data-[state=open]:text-foreground">
+				<SelectTrigger className="h-8 flex-1 min-w-[100px] max-w-[140px] text-xs bg-transparent dark:bg-transparent dark:hover:bg-transparent">
 					<div className="flex items-center gap-2">
-						<Cpu className="h-3 w-3" />
+						<Cpu className="h-3 w-3 shrink-0" />
 						<span className="truncate">
 							{preset === "balanced"
 								? "Balanced"

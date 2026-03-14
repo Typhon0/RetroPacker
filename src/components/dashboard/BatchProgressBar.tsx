@@ -11,30 +11,11 @@ import { AlertCircle, CheckCircle, Clock, Loader2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import type { WorkflowType } from "@/domain/types/workflow.types";
 import { useSignalValue } from "@/hooks/useSignalValue";
-import { cn } from "@/lib/utils";
+import { cn, formatCompactRatio, formatSize } from "@/lib/utils";
 import { jobStore } from "@/stores/JobStore";
 
 interface BatchProgressBarProps {
 	workflow: WorkflowType;
-}
-
-function formatSize(bytes: number): string {
-	const safe = Math.max(0, bytes);
-	if (safe === 0) return "0 B";
-
-	const units = ["B", "KB", "MB", "GB", "TB"];
-	let size = safe;
-	let unitIndex = 0;
-	while (size >= 1024 && unitIndex < units.length - 1) {
-		size /= 1024;
-		unitIndex++;
-	}
-	return `${size.toFixed(2)} ${units[unitIndex]}`;
-}
-
-function formatRatio(ratio: number | undefined): string | undefined {
-	if (ratio === undefined || !Number.isFinite(ratio)) return undefined;
-	return `${ratio.toFixed(1)}%`;
 }
 
 function getWorkflowLabel(workflow: WorkflowType): string {
@@ -70,8 +51,8 @@ export function BatchProgressBar({ workflow }: BatchProgressBarProps) {
 	const globalHasCompressionStats = globalStats.jobsWithCompressionEstimate > 0;
 	const workflowDeltaLabel = formatSavingsLabel(stats.estimatedSavedBytes);
 	const globalDeltaLabel = formatSavingsLabel(globalStats.estimatedSavedBytes);
-	const workflowRatio = formatRatio(stats.estimatedCompressionRatio);
-	const globalRatio = formatRatio(globalStats.estimatedCompressionRatio);
+	const workflowRatio = formatCompactRatio(stats.estimatedCompressionRatio);
+	const globalRatio = formatCompactRatio(globalStats.estimatedCompressionRatio);
 	const workflowLabel = getWorkflowLabel(workflow);
 	const showDistinctGlobalStats =
 		globalHasCompressionStats &&
@@ -88,7 +69,10 @@ export function BatchProgressBar({ workflow }: BatchProgressBarProps) {
 		<div className="border-b bg-card/50 px-4 py-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
 			{/* Overall progress bar */}
 			<div className="w-32 flex items-center gap-2">
-				<Progress value={overallProgress} className="h-1.5" />
+				<Progress
+					value={overallProgress}
+					className={cn("h-1.5", allDone && "progress-complete")}
+				/>
 				<span className="text-muted-foreground font-mono whitespace-nowrap">
 					{overallProgress.toFixed(0)}%
 				</span>
@@ -99,19 +83,19 @@ export function BatchProgressBar({ workflow }: BatchProgressBarProps) {
 			{/* Status counts */}
 			<div className="flex items-center gap-3 text-muted-foreground">
 				{completed > 0 && (
-					<span className="flex items-center gap-1 text-green-500">
+					<span className="flex items-center gap-1 text-success">
 						<CheckCircle className="h-3 w-3" />
 						{completed}
 					</span>
 				)}
 				{processing > 0 && (
-					<span className="flex items-center gap-1 text-blue-500">
+					<span className="flex items-center gap-1 text-info">
 						<Loader2 className="h-3 w-3 animate-spin" />
 						{processing}
 					</span>
 				)}
 				{failed > 0 && (
-					<span className="flex items-center gap-1 text-red-500">
+					<span className="flex items-center gap-1 text-destructive">
 						<AlertCircle className="h-3 w-3" />
 						{failed}
 					</span>
@@ -138,8 +122,8 @@ export function BatchProgressBar({ workflow }: BatchProgressBarProps) {
 					className={cn(
 						"inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono",
 						stats.estimatedSavedBytes >= 0
-							? "border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
-							: "border-amber-500/30 bg-amber-500/10 text-amber-500",
+							? "border-success/20 bg-success/5 text-success"
+							: "border-warning/20 bg-warning/5 text-warning",
 					)}
 				>
 					<span className="text-[10px] uppercase tracking-wide opacity-70">

@@ -751,13 +751,16 @@ export function JobTable({
 	};
 
 	return (
-		<div className="space-y-2 flex flex-col h-full min-h-0">
+		<div className="bg-card flex flex-col h-full min-h-0 rounded-xl overflow-hidden border border-border">
 			{/* Filter Bar */}
-			<div className="flex items-center gap-2 flex-wrap flex-shrink-0">
+			<div className="flex items-center gap-2 flex-wrap flex-shrink-0 p-3 bg-muted/20 border-b border-border/50">
 				<div className="flex items-center gap-2">
-					<Filter className="h-4 w-4 text-muted-foreground" />
-					<Select value={statusFilter} onValueChange={setStatusFilter}>
-						<SelectTrigger className="w-[130px] h-8">
+					<Filter className="h-4 w-4 text-muted-foreground ml-1" />
+					<Select
+						value={statusFilter}
+						onValueChange={(val) => setStatusFilter(val || "all")}
+					>
+						<SelectTrigger className="w-[100px] sm:w-[130px] h-8 text-xs">
 							<SelectValue placeholder="Status" />
 						</SelectTrigger>
 						<SelectContent>
@@ -769,8 +772,11 @@ export function JobTable({
 						</SelectContent>
 					</Select>
 
-					<Select value={systemFilter} onValueChange={setSystemFilter}>
-						<SelectTrigger className="w-[130px] h-8">
+					<Select
+						value={systemFilter}
+						onValueChange={(val) => setSystemFilter(val || "all")}
+					>
+						<SelectTrigger className="w-[100px] sm:w-[130px] h-8 text-xs">
 							<SelectValue placeholder="System" />
 						</SelectTrigger>
 						<SelectContent>
@@ -783,8 +789,11 @@ export function JobTable({
 						</SelectContent>
 					</Select>
 
-					<Select value={folderFilter} onValueChange={setFolderFilter}>
-						<SelectTrigger className="w-[160px] h-8">
+					<Select
+						value={folderFilter}
+						onValueChange={(val) => setFolderFilter(val || "all")}
+					>
+						<SelectTrigger className="w-[120px] sm:w-[160px] h-8 text-xs">
 							<SelectValue placeholder="Folder" />
 						</SelectTrigger>
 						<SelectContent>
@@ -799,11 +808,16 @@ export function JobTable({
 				</div>
 
 				<div className="flex items-center gap-1 ml-auto">
-					<Button variant="outline" size="sm" onClick={expandAll}>
+					<Button variant="ghost" size="sm" onClick={expandAll} className="h-8">
 						<ChevronsUpDown className="h-4 w-4 mr-1" />
 						Expand All
 					</Button>
-					<Button variant="outline" size="sm" onClick={collapseAll}>
+					<Button
+						variant="ghost"
+						size="sm"
+						onClick={collapseAll}
+						className="h-8"
+					>
 						<ChevronsUpDown className="h-4 w-4 mr-1" />
 						Collapse All
 					</Button>
@@ -814,18 +828,24 @@ export function JobTable({
 			<div
 				ref={scrollContainerRef}
 				onScroll={handleScroll}
-				className="rounded-md border bg-card flex-1 overflow-y-auto min-h-0 relative"
+				className="flex-1 overflow-y-auto min-h-0 relative"
 			>
-				<Table>
-					<TableHeader className="sticky top-0 bg-card z-10 shadow-sm">
+				<Table role="table" aria-label={`${workflow} job queue`}>
+					<TableHeader className="sticky top-0 z-10 bg-card border-b">
 						<TableRow>
-							<TableHead className="w-[40px]"></TableHead>
-							<TableHead>Game / Folder</TableHead>
-							<TableHead>System</TableHead>
-							<TableHead>Progress</TableHead>
-							<TableHead>ETA</TableHead>
-							<TableHead className="text-right">Size</TableHead>
-							<TableHead className="w-[60px]"></TableHead>
+							<TableHead scope="col" className="w-[40px]">
+								<span className="sr-only">Status</span>
+							</TableHead>
+							<TableHead scope="col">Game / Folder</TableHead>
+							<TableHead scope="col">System</TableHead>
+							<TableHead scope="col">Progress</TableHead>
+							<TableHead scope="col">ETA</TableHead>
+							<TableHead scope="col" className="text-right">
+								Size
+							</TableHead>
+							<TableHead scope="col" className="w-[60px]">
+								<span className="sr-only">Actions</span>
+							</TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>

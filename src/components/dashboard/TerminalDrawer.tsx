@@ -102,64 +102,76 @@ export function TerminalDrawer({ job, isOpen, onClose }: TerminalDrawerProps) {
 	}, [isOpen, selectedJobId, updateBottomStickiness]);
 
 	return (
-		<div
-			className={cn(
-				"fixed bottom-0 left-0 right-0 bg-zinc-950 border-t transition-transform duration-300 ease-in-out z-50 flex flex-col shadow-2xl",
-				isOpen ? "translate-y-0 h-64" : "translate-y-full h-0",
-			)}
-		>
-			<div className="flex items-center justify-between px-4 py-2 bg-zinc-900 border-b border-zinc-800">
-				<div className="flex items-center gap-2 text-sm font-mono text-zinc-400">
-					<Terminal className="h-4 w-4" />
-					<span>{job ? `Terminal: ${job.filename}` : "Terminal"}</span>
-				</div>
-				<Button
-					variant="ghost"
-					size="icon"
-					className="h-6 w-6"
+		<>
+			{isOpen && (
+				<div
+					className="fixed inset-0 bg-black/10 z-40 transition-opacity duration-200"
 					onClick={onClose}
-				>
-					<X className="h-4 w-4" />
-				</Button>
-			</div>
-
+					aria-hidden="true"
+				/>
+			)}
 			<div
-				ref={scrollRef}
-				onScroll={() => {
-					if (!scrollRef.current) return;
-					setScrollTop(scrollRef.current.scrollTop);
-					updateBottomStickiness();
-				}}
-				className="flex-1 overflow-auto p-4 font-mono text-xs text-zinc-300"
-			>
-				{job ? (
-					totalLines > 0 ? (
-						<div
-							className="relative"
-							style={{ height: `${visibleWindow.totalHeight}px` }}
-						>
-							<div
-								style={{
-									transform: `translateY(${visibleWindow.offsetY}px)`,
-								}}
-							>
-								{visibleLines.map((line) => (
-									<div
-										key={line.id}
-										className="h-[18px] leading-[18px] whitespace-pre"
-									>
-										{line.text}
-									</div>
-								))}
-							</div>
-						</div>
-					) : (
-						<div className="text-zinc-500 italic">Waiting for logs...</div>
-					)
-				) : (
-					<div className="text-zinc-500 italic">No job selected</div>
+				className={cn(
+					"fixed bottom-0 left-0 right-0 bg-card text-card-foreground border-t border-border transition-transform duration-300 ease-in-out z-50 flex flex-col shadow-lg",
+					isOpen ? "translate-y-0 h-64" : "translate-y-full h-0",
 				)}
+			>
+				<div className="flex items-center justify-between px-4 py-2 bg-muted/40 border-b border-border">
+					<div className="flex items-center gap-2 text-sm font-mono text-muted-foreground">
+						<Terminal className="h-4 w-4" />
+						<span>{job ? `Terminal: ${job.filename}` : "Terminal"}</span>
+					</div>
+					<Button
+						variant="ghost"
+						size="icon"
+						className="h-8 w-8"
+						aria-label="Close terminal drawer"
+						onClick={onClose}
+					>
+						<X className="h-4 w-4" />
+					</Button>
+				</div>
+
+				<div
+					ref={scrollRef}
+					onScroll={() => {
+						if (!scrollRef.current) return;
+						setScrollTop(scrollRef.current.scrollTop);
+						updateBottomStickiness();
+					}}
+					className="flex-1 overflow-auto p-4 font-mono text-xs text-foreground"
+				>
+					{job ? (
+						totalLines > 0 ? (
+							<div
+								className="relative"
+								style={{ height: `${visibleWindow.totalHeight}px` }}
+							>
+								<div
+									style={{
+										transform: `translateY(${visibleWindow.offsetY}px)`,
+									}}
+								>
+									{visibleLines.map((line) => (
+										<div
+											key={line.id}
+											className="h-[18px] leading-[18px] whitespace-pre"
+										>
+											{line.text}
+										</div>
+									))}
+								</div>
+							</div>
+						) : (
+							<div className="text-muted-foreground italic">
+								Waiting for logs...
+							</div>
+						)
+					) : (
+						<div className="text-muted-foreground italic">No job selected</div>
+					)}
+				</div>
 			</div>
-		</div>
+		</>
 	);
 }

@@ -120,3 +120,39 @@ export const PLATFORM_DISPLAY_NAMES: Record<Platform, string> = {
 	[PLATFORM.GAMECUBE]: "Nintendo GameCube",
 	[PLATFORM.WII]: "Nintendo Wii",
 };
+
+/**
+ * Short labels for platform override selectors (compact UI).
+ */
+export const PLATFORM_SHORT_LABELS: Record<Platform, string> = {
+	[PLATFORM.AUTO]: "Auto",
+	[PLATFORM.PS1]: "PS1",
+	[PLATFORM.PS2]: "PS2",
+	[PLATFORM.PSP]: "PSP",
+	[PLATFORM.SATURN]: "Saturn",
+	[PLATFORM.DREAMCAST]: "Dreamcast",
+	[PLATFORM.SEGACD]: "Sega CD",
+	[PLATFORM.GAMECUBE]: "GameCube",
+	[PLATFORM.WII]: "Wii",
+};
+
+/**
+ * Platforms available for manual override in selectors.
+ * Excludes "auto" which is handled separately.
+ */
+export const OVERRIDE_PLATFORMS: ReadonlyArray<Platform> = [
+	PLATFORM.PS1,
+	PLATFORM.PS2,
+	PLATFORM.PSP,
+	PLATFORM.SATURN,
+	PLATFORM.DREAMCAST,
+	PLATFORM.GAMECUBE,
+	PLATFORM.WII,
+] as const;
+
+/**
+ * Set of override platform values for quick membership checks.
+ */
+export const OVERRIDE_PLATFORM_SET: ReadonlySet<Platform> = new Set(
+	OVERRIDE_PLATFORMS,
+);

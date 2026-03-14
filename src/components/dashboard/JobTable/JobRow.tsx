@@ -12,31 +12,30 @@ import {
 	AlertTriangle,
 	BadgeCheck,
 	CheckCircle,
-	FolderOpen,
 	Link2,
-	Play,
 	PlayCircle,
 	ShieldCheck,
 	ShieldX,
-	Trash2,
-	XCircle,
 } from "lucide-react";
 import React from "react";
-import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
+import { createJobRowActions, RowActions } from "@/components/ui/row-actions";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { TableCell, TableRow } from "@/components/ui/table";
 import type { JobState } from "@/domain/entities/JobState";
 import type { Platform } from "@/domain/types/platform.types";
 import { useSignalValue } from "@/hooks/useSignalValue";
-import { cn, formatDuration } from "@/lib/utils";
+import {
+	cn,
+	estimateSavedBytes,
+	formatDeltaSize,
+	formatDuration,
+	formatPlatformLabel,
+	formatRatio,
+	formatSize,
+} from "@/lib/utils";
 import { CoverThumbnail } from "../CoverThumbnail";
+import { PlatformSelector } from "../PlatformSelector";
 
 interface JobRowProps {
 	job: JobState;
@@ -52,27 +51,23 @@ interface JobRowProps {
 	onOpenLocation: (jobId: string) => void;
 }
 
-const PLATFORM_OVERRIDE_OPTIONS: ReadonlyArray<{
-	value: Platform;
-	label: string;
-}> = [
-	{ value: "ps1", label: "PS1" },
-	{ value: "ps2", label: "PS2" },
-	{ value: "psp", label: "PSP" },
-	{ value: "saturn", label: "Saturn" },
-	{ value: "dreamcast", label: "Dreamcast" },
-	{ value: "gamecube", label: "GameCube" },
-	{ value: "wii", label: "Wii" },
-];
-
 const JobStatusIcon = React.memo(({ job }: { job: JobState }) => {
 	const status = useSignalValue(job.status);
 	const dataSha1 = useSignalValue(job.dataSha1);
 	const verifiedName = useSignalValue(job.verifiedName);
 	const verificationResult = useSignalValue(job.verificationResult);
 
+	const wrapperClass = cn(
+		"transition-opacity duration-200",
+		status === "completed" && "status-complete",
+	);
+
 	if (status === "processing") {
-		return <PlayCircle className="h-4 w-4 text-blue-500 animate-pulse" />;
+		return (
+			<div className={wrapperClass}>
+				<PlayCircle className="h-4 w-4 text-info animate-pulse" />
+			</div>
+		);
 	}
 	if (job.workflow === "verify") {
 		if (status === "failed" || verificationResult === "fail") {
@@ -80,16 +75,16 @@ const JobStatusIcon = React.memo(({ job }: { job: JobState }) => {
 				? "Verification failed. Hash does not match database."
 				: "Verification failed. Archive may be corrupted.";
 			return (
-				<div title={tooltip}>
-					<ShieldX className="h-4 w-4 text-red-500" />
+				<div className={wrapperClass} title={tooltip}>
+					<ShieldX className="h-4 w-4 text-destructive" />
 				</div>
 			);
 		}
 		if (status === "completed") {
 			if (verifiedName) {
 				return (
-					<div title={`Perfect Dump: ${verifiedName}`}>
-						<BadgeCheck className="h-4 w-4 text-emerald-500" />
+					<div className={wrapperClass} title={`Perfect Dump: ${verifiedName}`}>
+						<BadgeCheck className="h-4 w-4 text-success" />
 					</div>
 				);
 			}
@@ -97,71 +92,28 @@ const JobStatusIcon = React.memo(({ job }: { job: JobState }) => {
 				? "Verified archive. Hash not found in database."
 				: "Verified archive. Database match requires SHA-1.";
 			return (
-				<div title={tooltip}>
-					<ShieldCheck className="h-4 w-4 text-sky-500" />
+				<div className={wrapperClass} title={tooltip}>
+					<ShieldCheck className="h-4 w-4 text-info" />
 				</div>
 			);
 		}
 	}
 	if (status === "failed") {
-		return <AlertCircle className="h-4 w-4 text-red-500" />;
+		return (
+			<div className={wrapperClass}>
+				<AlertCircle className="h-4 w-4 text-destructive" />
+			</div>
+		);
 	}
 	if (status === "completed") {
-		return <CheckCircle className="h-4 w-4 text-green-500" />;
+		return (
+			<div className={wrapperClass}>
+				<CheckCircle className="h-4 w-4 text-success" />
+			</div>
+		);
 	}
 	return <div className="h-4 w-4 rounded-full border-2 border-muted" />;
 });
-
-function formatSize(bytes: number): string {
-	if (bytes <= 0) return "Unknown";
-	const units = ["B", "KB", "MB", "GB", "TB"];
-	let size = bytes;
-	let unitIndex = 0;
-	while (size >= 1024 && unitIndex < units.length - 1) {
-		size /= 1024;
-		unitIndex++;
-	}
-	return `${size.toFixed(2)} ${units[unitIndex]}`;
-}
-
-function formatDeltaSize(bytes: number): string {
-	if (bytes === 0) return "0 B";
-	return formatSize(Math.abs(bytes));
-}
-
-function formatRatio(ratio: number): string {
-	return `${Number.isInteger(ratio) ? ratio.toString() : ratio.toFixed(1)}%`;
-}
-
-function estimateSavedBytes(
-	originalSize: number,
-	compressionRatio: number,
-): number {
-	return originalSize - originalSize * (compressionRatio / 100);
-}
-
-function formatPlatformLabel(platform: Platform): string {
-	switch (platform) {
-		case "ps1":
-			return "PS1";
-		case "ps2":
-			return "PS2";
-		case "psp":
-			return "PSP";
-		case "saturn":
-			return "Saturn";
-		case "dreamcast":
-			return "Dreamcast";
-		case "gamecube":
-			return "GameCube";
-		case "wii":
-			return "Wii";
-		case "segacd":
-			return "Sega CD";
-		default:
-			return "Auto";
-	}
-}
 
 const JobProgressCell = React.memo(({ job }: { job: JobState }) => {
 	const progress = useSignalValue(job.progress);
@@ -226,7 +178,7 @@ const JobSizeCell = React.memo(({ job }: { job: JobState }) => {
 					{formatSize(job.originalSize)}
 				</span>
 				{showRatio && (
-					<span className="inline-flex items-center rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-sky-500">
+					<span className="inline-flex items-center rounded-full border border-info/20 bg-info/5 px-2 py-0.5 text-info">
 						{formatRatio(compressionRatio)}
 					</span>
 				)}
@@ -236,8 +188,8 @@ const JobSizeCell = React.memo(({ job }: { job: JobState }) => {
 						className={cn(
 							"inline-flex items-center rounded-full border px-2 py-0.5",
 							isSavingsPositive
-								? "border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
-								: "border-amber-500/30 bg-amber-500/10 text-amber-500",
+								? "border-success/20 bg-success/5 text-success"
+								: "border-warning/20 bg-warning/5 text-warning",
 						)}
 					>
 						{deltaLabel}
@@ -266,8 +218,6 @@ const JobRowComponent = ({
 	const platformOverride = useSignalValue(job.platformOverride);
 
 	const isDisabled = !!folderOverride;
-	const displayValue = platformOverride || system.toLowerCase();
-	const isProcessing = status === "processing";
 	const isUnknownBlocked = system === "Unknown" && !platformOverride;
 	const badgeLabel = platformOverride
 		? formatPlatformLabel(platformOverride)
@@ -282,14 +232,14 @@ const JobRowComponent = ({
 			className={cn(
 				"cursor-pointer hover:bg-muted/10 group",
 				isSelected && "bg-muted/50",
-				isUnknownBlocked && "border-l-2 border-l-amber-500 bg-amber-500/5",
+				isUnknownBlocked && "border-l-2 border-l-warning bg-warning/5",
 			)}
 			onClick={() => onSelect(job.id)}
 		>
 			<TableCell style={{ paddingLeft: `${depth * 16 + 8}px` }}>
 				<div className="flex items-center gap-2">
 					{isUnknownBlocked ? (
-						<AlertTriangle className="h-4 w-4 text-amber-500" />
+						<AlertTriangle className="h-4 w-4 text-warning" />
 					) : (
 						<JobStatusIcon job={job} />
 					)}
@@ -306,7 +256,7 @@ const JobRowComponent = ({
 							<span className="truncate text-sm leading-none">
 								{job.filename}
 							</span>
-							<span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-blue-500/10 text-blue-500">
+							<span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-secondary text-secondary-foreground">
 								{mainExt}
 							</span>
 						</div>
@@ -318,7 +268,7 @@ const JobRowComponent = ({
 							<span className="truncate text-sm leading-none">
 								{linkedCompanionFilename}
 							</span>
-							<span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-purple-500/10 text-purple-500">
+							<span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-muted text-muted-foreground">
 								{linkExt}
 							</span>
 						</div>
@@ -333,105 +283,29 @@ const JobRowComponent = ({
 			</TableCell>
 			<TableCell>
 				{status === "pending" || isUnknownBlocked ? (
-					<Select
-						value={isUnknownBlocked ? undefined : displayValue}
-						onValueChange={(val) => {
-							onUpdatePlatform(job.id, val as Platform);
-						}}
-						disabled={isDisabled}
-					>
-						<SelectTrigger
-							className={cn(
-								"h-7 text-xs",
-								isUnknownBlocked ? "w-[250px]" : "w-[140px]",
-								isDisabled && "opacity-50",
-								isUnknownBlocked && "border-amber-500/50 text-amber-500",
-							)}
-							onClick={(e) => e.stopPropagation()}
-						>
-							{isUnknownBlocked ? (
-								<span className="flex items-center gap-1">
-									<AlertTriangle className="h-3 w-3" />
-									Platform Unknown. Please select:
-								</span>
-							) : (
-								<SelectValue />
-							)}
-						</SelectTrigger>
-						<SelectContent>
-							{![
-								"ps1",
-								"ps2",
-								"psp",
-								"dreamcast",
-								"saturn",
-								"gamecube",
-								"wii",
-							].includes(system.toLowerCase()) &&
-								system !== "Unknown" && (
-									<SelectItem value={system.toLowerCase()}>{system}</SelectItem>
-								)}
-							{PLATFORM_OVERRIDE_OPTIONS.map((option) => (
-								<SelectItem key={option.value} value={option.value}>
-									{option.label}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
+					<PlatformSelector
+						value={platformOverride}
+						onChange={(val) => onUpdatePlatform(job.id, val)}
+						detectedSystem={system}
+						isDisabled={isDisabled}
+					/>
 				) : (
-					<span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold border-transparent bg-secondary text-secondary-foreground">
-						{badgeLabel}
-					</span>
+					<StatusBadge variant="secondary">{badgeLabel}</StatusBadge>
 				)}
 			</TableCell>
 			<JobProgressCell job={job} />
 			<JobEtaCell job={job} />
 			<JobSizeCell job={job} />
 			<TableCell className="text-right">
-				<div className="flex justify-end gap-1">
-					{(status === "pending" || status === "failed") && (
-						<Button
-							variant="ghost"
-							size="icon"
-							className="h-8 w-8 text-green-500 opacity-0 group-hover:opacity-100 transition-opacity"
-							title="Start job"
-							onClick={(e) => {
-								e.stopPropagation();
-								onStart(job.id);
-							}}
-						>
-							<Play className="h-4 w-4" />
-						</Button>
-					)}
-					<Button
-						variant="ghost"
-						size="icon"
-						className="h-8 w-8 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-all"
-						title="Open location"
-						onClick={(e) => {
-							e.stopPropagation();
-							onOpenLocation(job.id);
-						}}
-					>
-						<FolderOpen className="h-4 w-4" />
-					</Button>
-					<Button
-						variant="ghost"
-						size="icon"
-						className="h-8 w-8 text-muted-foreground hover:text-destructive transition-colors"
-						title={isProcessing ? "Cancel job" : "Remove job"}
-						onClick={(e) => {
-							e.stopPropagation();
-							onRemove(job.id);
-						}}
-					>
-						{isProcessing ? (
-							<XCircle className="h-4 w-4 text-blue-500 animate-pulse" />
-						) : (
-							<Trash2 className="h-4 w-4" />
-						)}
-					</Button>
-				</div>
+				<RowActions
+					actions={createJobRowActions({
+						status,
+						filename: job.filename,
+						onStart: () => onStart(job.id),
+						onOpenLocation: () => onOpenLocation(job.id),
+						onRemove: () => onRemove(job.id),
+					})}
+				/>
 			</TableCell>
 		</TableRow>
 	);

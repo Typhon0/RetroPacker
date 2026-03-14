@@ -20,7 +20,8 @@
 				"useSemanticElements": "off"
 			},
 			"complexity": {
-				"noStaticOnlyClass": "off"
+				"noStaticOnlyClass": "off",
+				"noImportantStyles": "off"
 			},
 			"suspicious": {
 				"noUnknownAtRules": {

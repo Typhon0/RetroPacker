@@ -51,18 +51,6 @@ export function DropZone({ workflow }: DropZoneProps) {
 		setIsDragging(false);
 	}, []);
 
-	useEffect(() => {
-		if (!isAnalyzing || analysisStartAt === undefined) {
-			return;
-		}
-
-		const timer = setInterval(() => {
-			setAnalysisElapsedMs(Date.now() - analysisStartAt);
-		}, 300);
-
-		return () => clearInterval(timer);
-	}, [analysisStartAt, isAnalyzing]);
-
 	const processPathList = useCallback(
 		async (paths: string[]) => {
 			if (paths.length === 0) return;
@@ -378,18 +366,17 @@ export function DropZone({ workflow }: DropZoneProps) {
 			onDragOver={handleDragOver}
 			onDragLeave={handleDragLeave}
 			onDrop={handleDrop}
-			onClick={!isAnalyzing && !isConflictDialogOpen ? handleClick : undefined}
 			onKeyDown={
 				!isAnalyzing && !isConflictDialogOpen ? handleKeyDown : undefined
 			}
 			role="button"
 			tabIndex={isAnalyzing || isConflictDialogOpen ? -1 : 0}
 			className={cn(
-				"border-2 border-dashed rounded-xl p-6 transition-all duration-300 flex flex-col items-center justify-center text-center cursor-pointer relative group min-h-[200px]",
+				"bg-card border-2 border-dashed rounded-xl p-8 transition-all duration-200 flex flex-col items-center justify-center text-center cursor-pointer group min-h-[200px]",
 				isDragging
-					? "border-primary bg-primary/10 scale-[1.02]"
-					: "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/5",
-				isAnalyzing ? "cursor-wait opacity-80" : "",
+					? "border-primary bg-primary/5 scale-[1.01] shadow-lg shadow-primary/5"
+					: "border-muted-foreground/25 hover:border-muted-foreground/40 hover:bg-muted/5",
+				isAnalyzing ? "cursor-wait opacity-75" : "",
 			)}
 		>
 			{isAnalyzing ? (
@@ -417,19 +404,24 @@ export function DropZone({ workflow }: DropZoneProps) {
 				<>
 					<Upload
 						className={cn(
-							"h-10 w-10 mb-3 transition-colors",
-							isDragging ? "text-primary" : "text-muted-foreground",
+							"h-10 w-10 mb-5 transition-colors duration-200",
+							isDragging
+								? "text-primary"
+								: "text-muted-foreground group-hover:text-foreground",
 						)}
 					/>
-					<h3 className="text-lg font-semibold mb-1">{fileConfig.dropLabel}</h3>
-					<p className="text-sm text-muted-foreground max-w-sm mb-4">
+					<h3 className="text-lg font-semibold tracking-tight mb-2 text-foreground">
+						{fileConfig.dropLabel}
+					</h3>
+					<p className="text-sm text-muted-foreground font-medium max-w-md mb-6 leading-relaxed">
 						Supports: {fileConfig.supportedText}
 					</p>
 
-					<div className="flex gap-2">
+					<div className="flex gap-3 relative z-10">
 						<Button
 							variant="secondary"
 							size="sm"
+							aria-label={`Add ${workflow} files`}
 							onClick={(e) => {
 								e.stopPropagation();
 								handleClick();
@@ -437,15 +429,18 @@ export function DropZone({ workflow }: DropZoneProps) {
 						>
 							Add Files
 						</Button>
-						<Button variant="secondary" size="sm" onClick={handleAddFolder}>
-							<FolderPlus className="h-4 w-4 mr-2" />
+						<Button
+							variant="secondary"
+							size="sm"
+							aria-label={`Add ${workflow} folder`}
+							onClick={handleAddFolder}
+						>
+							<FolderPlus className="h-4 w-4 mr-2" aria-hidden="true" />
 							Add Folder
 						</Button>
 					</div>
 					{dropError && (
-						<p className="mt-3 text-sm font-medium text-amber-600">
-							{dropError}
-						</p>
+						<p className="mt-3 text-sm font-medium text-warning">{dropError}</p>
 					)}
 				</>
 			)}

@@ -4,6 +4,8 @@ import { AboutDialog } from "@/components/dashboard/AboutDialog";
 import { BatchProgressBar } from "@/components/dashboard/BatchProgressBar";
 import { GlobalSettings } from "@/components/dashboard/GlobalSettings";
 import { WorkflowTabs } from "@/components/dashboard/WorkflowTabs";
+import { ModeToggle } from "@/components/mode-toggle";
+import { ThemeProvider } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -69,8 +71,7 @@ function AppContent() {
 	const handleConcurrencyChange = useCallback(
 		(e: React.ChangeEvent<HTMLInputElement>) => {
 			const rawValue = parseInt(e.target.value, 10);
-			// Validate and clamp input
-			if (Number.isNaN(rawValue)) return; // Don't update on empty/invalid
+			if (Number.isNaN(rawValue)) return;
 			const clamped = Math.min(
 				MAX_CONCURRENCY,
 				Math.max(MIN_CONCURRENCY, rawValue),
@@ -79,6 +80,14 @@ function AppContent() {
 		},
 		[setConcurrency],
 	);
+
+	const handleConcurrencyBlur = useCallback(() => {
+		if (concurrency < MIN_CONCURRENCY || concurrency > MAX_CONCURRENCY) {
+			setConcurrency(
+				Math.min(MAX_CONCURRENCY, Math.max(MIN_CONCURRENCY, concurrency)),
+			);
+		}
+	}, [concurrency, setConcurrency]);
 
 	// Global keyboard shortcuts
 	useKeyboardShortcuts(activeWorkflow, isProcessing);
@@ -110,32 +119,47 @@ function AppContent() {
 
 	return (
 		<TooltipProvider>
-			<div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
-				{/* Header */}
-				<header className="border-b bg-card p-4 flex items-center justify-between sticky top-0 z-10">
-					<div className="flex items-center gap-2">
-						<div className="h-8 w-8 bg-primary rounded-md flex items-center justify-center text-primary-foreground font-bold text-lg">
+			<div className="min-h-screen text-foreground flex flex-col font-sans">
+				<header className="bg-background border-b border-border p-3 sm:p-4 flex items-center justify-between sticky top-0 z-10 gap-2 animate-enter">
+					<div className="flex items-center gap-2 sm:gap-3 min-w-0">
+						<div className="h-8 w-8 sm:h-9 sm:w-9 bg-muted rounded-lg flex items-center justify-center text-primary font-bold text-xs sm:text-sm select-none shrink-0">
 							RP
 						</div>
-						<h1 className="text-xl font-bold tracking-tight">RetroPacker</h1>
+						<h1 className="text-lg sm:text-xl font-semibold tracking-tight text-foreground truncate">
+							RetroPacker
+						</h1>
 					</div>
 
-					<div className="flex items-center gap-4">
-						<div className="flex items-center gap-2 text-sm text-muted-foreground">
-							<span>Concurrency:</span>
+					<div className="flex items-center gap-2 sm:gap-4 flex-wrap justify-end">
+						<div className="flex items-center gap-2 text-sm text-foreground/80 font-medium bg-muted/30 px-2 sm:px-3 py-1.5 rounded-lg border border-border/40">
+							<label
+								htmlFor="concurrency-input"
+								className="shrink-0 text-xs sm:text-sm"
+							>
+								<span className="hidden sm:inline">Concurrency:</span>
+								<span className="sm:hidden">Conc:</span>
+							</label>
 							<input
+								id="concurrency-input"
 								type="number"
 								min={MIN_CONCURRENCY}
 								max={MAX_CONCURRENCY}
+								aria-label="Concurrency level (1–16)"
+								aria-describedby="concurrency-hint"
 								className={cn(
-									"flex h-8 w-14 rounded-md border border-input bg-transparent px-2 py-1 text-sm shadow-sm transition-colors",
-									"focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+									"flex h-7 w-10 sm:h-6 sm:w-12 rounded bg-background px-1 py-0 text-sm font-semibold transition-colors border border-border/50",
+									"focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50",
 									"text-center",
 								)}
 								value={concurrency}
 								onChange={handleConcurrencyChange}
+								onBlur={handleConcurrencyBlur}
 							/>
+							<span id="concurrency-hint" className="sr-only">
+								Number of parallel processing jobs, between 1 and 16
+							</span>
 						</div>
+						<ModeToggle />
 						<GlobalSettings />
 						<AboutDialog />
 
@@ -145,11 +169,14 @@ function AppContent() {
 									variant={isProcessing ? "secondary" : "default"}
 									size="sm"
 									onClick={handleToggleProcessing}
+									aria-label={
+										isProcessing ? "Pause processing" : "Start processing"
+									}
 								>
 									{isProcessing ? (
-										<Pause className="h-4 w-4 mr-2" />
+										<Pause className="h-4 w-4 mr-2" aria-hidden="true" />
 									) : (
-										<Play className="h-4 w-4 mr-2" />
+										<Play className="h-4 w-4 mr-2" aria-hidden="true" />
 									)}
 									{isProcessing ? "Pause" : "Start"}
 								</Button>
@@ -158,8 +185,9 @@ function AppContent() {
 										variant="outline"
 										size="sm"
 										onClick={handleRetryFailed}
+										aria-label={`Retry ${failedCount} failed job${failedCount === 1 ? "" : "s"}`}
 									>
-										<RotateCcw className="h-4 w-4 mr-2" />
+										<RotateCcw className="h-4 w-4 mr-2" aria-hidden="true" />
 										Retry {failedCount} Failed
 									</Button>
 								)}
@@ -167,8 +195,9 @@ function AppContent() {
 									variant="destructive"
 									size="sm"
 									onClick={handleClearQueue}
+									aria-label="Clear queue"
 								>
-									<Trash2 className="h-4 w-4 mr-2" />
+									<Trash2 className="h-4 w-4 mr-2" aria-hidden="true" />
 									Clear
 								</Button>
 							</div>
@@ -180,7 +209,7 @@ function AppContent() {
 				<BatchProgressBar workflow={activeWorkflow} />
 
 				{/* Main Content with Workflow Tabs */}
-				<main className="flex-1 container mx-auto p-6 flex flex-col gap-6 overflow-hidden">
+				<main className="flex-1 container mx-auto p-6 flex flex-col gap-6 overflow-hidden animate-enter animate-enter-delay-2">
 					<WorkflowTabs />
 				</main>
 			</div>
@@ -194,9 +223,11 @@ function AppContent() {
  */
 function App() {
 	return (
-		<RepositoryProvider>
-			<AppContent />
-		</RepositoryProvider>
+		<ThemeProvider defaultTheme="dark" storageKey="retropacker-theme">
+			<RepositoryProvider>
+				<AppContent />
+			</RepositoryProvider>
+		</ThemeProvider>
 	);
 }
 

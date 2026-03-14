@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { isNintendoSystem } from "@/domain/types/platform.types";
 import { DetectSystemUseCase } from "@/domain/usecases/DetectSystemUseCase";
+import { cn, formatFileSize } from "@/lib/utils";
 import { useRepositories } from "@/presentation/context/RepositoryContext";
 import { fetchCover } from "@/services/CoverArtService";
 import { extractGameId } from "@/services/GameIdExtractor";
@@ -117,14 +118,6 @@ const extractGameIdFromFilename = (filename: string): string | null => {
 		}
 	}
 	return null;
-};
-
-const formatFileSize = (bytes: number): string => {
-	if (bytes < 1024) return `${bytes} B`;
-	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
-	if (bytes < 1024 * 1024 * 1024)
-		return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-	return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 };
 
 export function InfoViewer() {
@@ -416,18 +409,15 @@ export function InfoViewer() {
 				}}
 				role="button"
 				tabIndex={0}
-				className={`
-                    border-2 border-dashed rounded-lg p-8 text-center cursor-pointer
-                    transition-colors duration-200
-                    ${
-											isDragging
-												? "border-primary bg-primary/10"
-												: "border-muted-foreground/25 hover:border-muted-foreground/50 bg-muted/5"
-										}
-                `}
+				className={cn(
+					"bg-card border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors duration-200",
+					isDragging
+						? "border-primary bg-primary/5"
+						: "border-muted-foreground/25 hover:border-muted-foreground/40 hover:bg-muted/5",
+				)}
 			>
 				<div className="flex flex-col items-center gap-2 text-muted-foreground">
-					<InfoIcon className="h-12 w-12" />
+					<InfoIcon className="h-10 w-10" />
 					<p className="text-sm font-medium">
 						{isDragging
 							? "Drop file here..."
@@ -485,8 +475,9 @@ export function InfoViewer() {
 										<div className="flex justify-center md:block">
 											<img
 												src={gameInfo.coverPath}
-												alt="Game Cover"
+												alt={`Cover art for ${gameInfo.filename}`}
 												className="max-h-64 max-w-48 w-auto h-auto rounded-lg border-2 border-border shadow-lg object-contain"
+												loading="lazy"
 												onError={(e) => {
 													(e.target as HTMLImageElement).style.display = "none";
 												}}
@@ -519,13 +510,13 @@ export function InfoViewer() {
 								{/* Info Column */}
 								<div className="flex-1 space-y-6">
 									{/* Basic Props Grid */}
-									<div className="grid grid-cols-2 gap-4">
+									<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 										<div className="space-y-1">
 											<span className="text-xs font-medium text-muted-foreground">
 												Format
 											</span>
 											<div className="flex items-center gap-2">
-												<div className="h-2 w-2 rounded-full bg-green-500" />
+												<div className="h-2 w-2 rounded-full bg-success" />
 												<p className="text-sm font-mono font-medium">
 													{gameInfo.format}
 												</p>
@@ -560,9 +551,9 @@ export function InfoViewer() {
 													Game Information
 												</h4>
 											</div>
-											<div className="grid grid-cols-2 gap-y-4 gap-x-8">
+											<div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-8">
 												{gameInfo.dolphinStats.internalName && (
-													<div className="col-span-2">
+													<div className="col-span-1 sm:col-span-2">
 														<span className="text-xs text-muted-foreground block mb-1">
 															Internal Name
 														</span>
@@ -630,14 +621,14 @@ export function InfoViewer() {
 													Compression Stats
 												</h4>
 											</div>
-											<div className="grid grid-cols-2 gap-y-4 gap-x-8">
+											<div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-8">
 												<div>
 													<span className="text-xs text-muted-foreground block mb-1">
 														Ratio
 													</span>
 													<div className="flex items-center gap-2">
 														<Percent className="h-3 w-3 text-muted-foreground" />
-														<span className="text-sm font-bold text-green-500">
+														<span className="text-sm font-bold text-success">
 															{gameInfo.chdStats.ratio}
 														</span>
 													</div>
@@ -739,8 +730,12 @@ export function InfoViewer() {
 									</div>
 
 									{showRaw && (
-										<div className="mt-2">
-											<pre className="text-xs bg-black/5 dark:bg-black/20 p-3 rounded-md overflow-auto max-h-64 font-mono text-muted-foreground whitespace-pre-wrap">
+										<div
+											className="mt-2"
+											role="region"
+											aria-label="Raw tool output"
+										>
+											<pre className="text-xs bg-black/5 dark:bg-black/20 p-3 rounded-md overflow-auto max-h-64 font-mono text-muted-foreground whitespace-pre-wrap break-all">
 												{gameInfo.rawOutput}
 											</pre>
 										</div>

@@ -31,7 +31,7 @@ export function AboutDialog() {
 					variant="ghost"
 					size="icon"
 					className="h-9 w-9 text-muted-foreground hover:text-foreground"
-					title="About RetroPacker"
+					aria-label="About RetroPacker"
 				>
 					<Info className="h-5 w-5" />
 				</Button>

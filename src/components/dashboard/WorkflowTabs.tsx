@@ -87,23 +87,27 @@ export function WorkflowTabs() {
 				onValueChange={handleTabChange}
 				className="flex-1 flex flex-col"
 			>
-				<TabsList className="w-full grid grid-cols-4 h-12">
-					{(Object.keys(WORKFLOW_CONFIG) as WorkflowType[]).map((workflow) => (
-						<TabsTrigger
-							key={workflow}
-							value={workflow}
-							className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-						>
-							{WORKFLOW_CONFIG[workflow].icon}
-							<span className="hidden sm:inline">
-								{WORKFLOW_CONFIG[workflow].label}
-							</span>
-						</TabsTrigger>
-					))}
-				</TabsList>
+				<div className="flex justify-center mb-4 sm:mb-6 mt-2 px-2">
+					<TabsList className="bg-card border border-border grid grid-cols-4 h-10 sm:h-12 p-1 rounded-xl w-full max-w-lg">
+						{(Object.keys(WORKFLOW_CONFIG) as WorkflowType[]).map(
+							(workflow) => (
+								<TabsTrigger
+									key={workflow}
+									value={workflow}
+									className="flex items-center justify-center gap-2 rounded-lg transition-colors duration-200 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground hover:bg-muted/50"
+								>
+									{WORKFLOW_CONFIG[workflow].icon}
+									<span className="hidden sm:inline font-medium">
+										{WORKFLOW_CONFIG[workflow].label}
+									</span>
+								</TabsTrigger>
+							),
+						)}
+					</TabsList>
+				</div>
 
 				{blockedUnknownCount > 0 && (
-					<div className="mt-3 inline-flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-600">
+					<div className="mt-3 inline-flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs font-medium text-warning">
 						<AlertTriangle className="h-4 w-4" />
 						{blockedUnknownCount} job
 						{blockedUnknownCount === 1 ? "" : "s"} blocked: platform unknown.
@@ -115,7 +119,7 @@ export function WorkflowTabs() {
 					<TabsContent
 						key={workflow}
 						value={workflow}
-						className="flex-1 flex flex-col gap-4 mt-4"
+						className="flex-1 flex flex-col gap-4 mt-4 data-[state=active]:animate-in data-[state=active]:fade-in-0 data-[state=active]:duration-200 data-[state=inactive]:animate-out data-[state=inactive]:fade-out-0 data-[state=inactive]:duration-100"
 					>
 						{/* Settings Toolbar - Only for Compress */}
 						{workflow === "compress" && (
