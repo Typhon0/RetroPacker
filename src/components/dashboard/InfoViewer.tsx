@@ -393,6 +393,16 @@ export function InfoViewer() {
 		}
 	}, [dialogRepository, processFilePath]);
 
+	const handleKeyDown = useCallback(
+		(e: React.KeyboardEvent) => {
+			if (e.key === "Enter" || e.key === " ") {
+				e.preventDefault();
+				handleClick();
+			}
+		},
+		[handleClick],
+	);
+
 	return (
 		<div className="flex flex-col gap-4 h-full">
 			{/* Drop Zone */}
@@ -401,18 +411,13 @@ export function InfoViewer() {
 				onDragLeave={handleDragLeave}
 				onDrop={handleDrop}
 				onClick={handleClick}
-				onKeyDown={(e) => {
-					if (e.key === "Enter" || e.key === " ") {
-						e.preventDefault();
-						handleClick();
-					}
-				}}
+				onKeyDown={handleKeyDown}
 				role="button"
 				tabIndex={0}
 				className={cn(
-					"bg-card border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors duration-200",
+					"surface-card border-2 border-dashed p-8 text-center cursor-pointer transition-colors duration-200",
 					isDragging
-						? "border-primary bg-primary/5"
+						? "border-primary bg-primary-10"
 						: "border-muted-foreground/25 hover:border-muted-foreground/40 hover:bg-muted/5",
 				)}
 			>
@@ -431,23 +436,19 @@ export function InfoViewer() {
 
 			{/* Loading State */}
 			{isLoading && (
-				<Card>
-					<CardContent className="flex items-center justify-center p-8">
-						<Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-						<span className="ml-2 text-sm text-muted-foreground">
-							Analyzing file and fetching metadata...
-						</span>
-					</CardContent>
-				</Card>
+				<div className="surface-card flex items-center justify-center p-8">
+					<Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+					<span className="ml-2 text-sm text-muted-foreground">
+						Analyzing file and fetching metadata...
+					</span>
+				</div>
 			)}
 
 			{/* Error State */}
 			{error && (
-				<Card className="border-destructive">
-					<CardContent className="p-4">
-						<p className="text-sm text-destructive">{error}</p>
-					</CardContent>
-				</Card>
+				<div className="surface-card border-destructive p-4">
+					<p className="text-sm text-destructive">{error}</p>
+				</div>
 			)}
 
 			{/* Game Info Display */}
@@ -476,7 +477,9 @@ export function InfoViewer() {
 											<img
 												src={gameInfo.coverPath}
 												alt={`Cover art for ${gameInfo.filename}`}
-												className="max-h-64 max-w-48 w-auto h-auto rounded-lg border-2 border-border shadow-lg object-contain"
+												width={192}
+												height={256}
+												className="max-h-64 max-w-48 w-auto h-auto rounded-lg border border-border shadow-lg object-contain"
 												loading="lazy"
 												onError={(e) => {
 													(e.target as HTMLImageElement).style.display = "none";
@@ -484,20 +487,20 @@ export function InfoViewer() {
 											/>
 										</div>
 									) : (
-										<div className="w-48 h-64 rounded-lg border-2 border-dashed border-muted-foreground/25 flex flex-col items-center justify-center bg-muted/5 text-muted-foreground">
+										<div className="w-48 h-64 rounded-lg border-2 border-dashed border-muted-foreground/25 flex flex-col items-center justify-center bg-muted text-muted-foreground">
 											{isCoverLoading ? (
 												<>
 													<Loader2 className="h-8 w-8 animate-spin text-primary opacity-50 mb-2" />
-													<p className="text-[10px] font-medium opacity-70">
+													<p className="text-xs font-medium opacity-70">
 														Fetching Cover...
 													</p>
 												</>
 											) : (
 												<>
 													<ImageIcon className="h-12 w-12 mb-2 opacity-50" />
-													<p className="text-xs font-medium">No Cover Art</p>
+													<p className="text-sm font-medium">No Cover Art</p>
 													{!gameInfo.gameId && (
-														<p className="text-[10px] text-center px-2 mt-1 opacity-70">
+														<p className="text-xs text-center px-2 mt-1 opacity-70">
 															ID not found
 														</p>
 													)}
@@ -544,7 +547,7 @@ export function InfoViewer() {
 
 									{/* Dolphin/RVZ Stats Grid (if available) */}
 									{gameInfo.dolphinStats && (
-										<div className="bg-muted/10 border rounded-lg p-4 space-y-3">
+										<div className="surface-card p-4 space-y-3">
 											<div className="flex items-center gap-2 mb-2">
 												<HardDrive className="h-4 w-4 text-primary" />
 												<h4 className="text-sm font-semibold">
@@ -614,7 +617,7 @@ export function InfoViewer() {
 
 									{/* CHD Stats Grid (if available) */}
 									{gameInfo.chdStats && (
-										<div className="bg-muted/10 border rounded-lg p-4 space-y-3">
+										<div className="surface-card p-4 space-y-3">
 											<div className="flex items-center gap-2 mb-2">
 												<HardDrive className="h-4 w-4 text-primary" />
 												<h4 className="text-sm font-semibold">
@@ -735,7 +738,7 @@ export function InfoViewer() {
 											role="region"
 											aria-label="Raw tool output"
 										>
-											<pre className="text-xs bg-black/5 dark:bg-black/20 p-3 rounded-md overflow-auto max-h-64 font-mono text-muted-foreground whitespace-pre-wrap break-all">
+											<pre className="text-sm bg-muted p-3 rounded-md overflow-auto max-h-64 font-mono text-muted-foreground whitespace-pre-wrap break-all">
 												{gameInfo.rawOutput}
 											</pre>
 										</div>

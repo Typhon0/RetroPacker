@@ -31,6 +31,7 @@ interface CueDirective {
 	readonly prefix: string;
 	readonly fileReference: string;
 	readonly suffix: string;
+	readonly originalFilename: string;
 }
 
 export interface PrepareCueResult {
@@ -126,10 +127,11 @@ export class CueProcessorService {
 		let modified = false;
 		for (const directive of directives) {
 			const originalReference = directive.fileReference.trim();
+			const originalFilename = directive.originalFilename;
 			const strippedReference = getBasename(originalReference);
-			let resolvedFilename = strippedReference;
+			let resolvedFilename = originalFilename;
 
-			if (strippedReference !== originalReference) {
+			if (originalFilename !== originalReference) {
 				modified = true;
 			}
 
@@ -149,7 +151,7 @@ export class CueProcessorService {
 					};
 				}
 
-				if (relinkedFilename !== resolvedFilename) {
+				if (relinkedFilename !== originalFilename) {
 					modified = true;
 					resolvedFilename = relinkedFilename;
 				}
@@ -174,7 +176,7 @@ export class CueProcessorService {
 			return { success: true };
 		}
 
-		const filename = getBasename(cuePath);
+		const filename = cuePath.split(/[\\/]/).pop() ?? cuePath;
 		const tempCuePath = await fileSystem.joinPath(tempDir, filename);
 		await fileSystem.writeTextFile(tempCuePath, lines.join("\n"));
 
@@ -191,9 +193,9 @@ export class CueProcessorService {
 		tempDir: string,
 		fileSystem: IFileSystemRepository,
 	): Promise<PrepareCueResult> {
-		const binFilename = getBasename(binPath);
-		const baseName = binFilename.replace(/\.[^.]+$/, "");
 		const binDir = await fileSystem.dirname(binPath);
+		const binFilename = binPath.split(/[\\/]/).pop() ?? binPath;
+		const baseName = binFilename.replace(/\.[^.]+$/, "");
 		const companionCuePath = await fileSystem.joinPath(
 			binDir,
 			`${baseName}.cue`,
@@ -245,11 +247,15 @@ export class CueProcessorService {
 			const match = FILE_DIRECTIVE_LINE_REGEX.exec(line);
 			if (!match) continue;
 
+			const fileReference = match[2];
+			const originalFilename = fileReference.replace(/^.*[\\/]/, "");
+
 			directives.push({
 				lineIndex: i,
 				prefix: match[1],
-				fileReference: match[2],
+				fileReference,
 				suffix: match[3],
+				originalFilename,
 			});
 		}
 
@@ -304,7 +310,7 @@ export class CueProcessorService {
 		binDir: string,
 		fileSystem: IFileSystemRepository,
 	): Promise<boolean> {
-		const binFilename = getBasename(binPath);
+		const binFilename = binPath.split(/[\\/]/).pop() ?? binPath;
 		const baseNoExt = binFilename.replace(/\.[^.]+$/, "");
 		const currentTrackRoot = CueProcessorService.extractTrackRoot(baseNoExt);
 		if (!currentTrackRoot) {

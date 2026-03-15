@@ -37,12 +37,7 @@ export class DolphinCommandBuilder {
 		let args: string[] = [];
 
 		if (workflow === "compress") {
-			const ext =
-				dolphin.format === "iso"
-					? "iso"
-					: dolphin.format === "gcz"
-						? "gcz"
-						: "rvz";
+			const ext = dolphin.format;
 			const outputPath = await fileSystem.joinPath(
 				outputDir,
 				`${outputBaseName}.${ext}`,
@@ -64,7 +59,11 @@ export class DolphinCommandBuilder {
 				args.push("-s");
 			}
 
-			if (dolphin.format !== "iso" && dolphin.compressionAlgorithm !== "none") {
+			if (
+				dolphin.format !== "iso" &&
+				dolphin.format !== "wbfs" &&
+				dolphin.compressionAlgorithm !== "none"
+			) {
 				args.push("-c", dolphin.compressionAlgorithm, "-l", level.toString());
 			}
 		} else if (workflow === "extract") {

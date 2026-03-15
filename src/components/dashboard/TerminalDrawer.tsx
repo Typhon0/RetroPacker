@@ -21,6 +21,7 @@ export function TerminalDrawer({ job, isOpen, onClose }: TerminalDrawerProps) {
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const lastJobIdRef = useRef<string | undefined>(undefined);
 	const isAtBottomRef = useRef(true);
+	const rafIdRef = useRef(0);
 	const [scrollTop, setScrollTop] = useState(0);
 	const [viewportHeight, setViewportHeight] = useState(0);
 	const selectedJobId = job?.id;
@@ -101,6 +102,11 @@ export function TerminalDrawer({ job, isOpen, onClose }: TerminalDrawerProps) {
 		updateBottomStickiness();
 	}, [isOpen, selectedJobId, updateBottomStickiness]);
 
+	// Cleanup RAF on unmount
+	useEffect(() => {
+		return () => cancelAnimationFrame(rafIdRef.current);
+	}, []);
+
 	return (
 		<>
 			{isOpen && (
@@ -111,9 +117,10 @@ export function TerminalDrawer({ job, isOpen, onClose }: TerminalDrawerProps) {
 				/>
 			)}
 			<div
+				style={{ height: "16rem" }}
 				className={cn(
 					"fixed bottom-0 left-0 right-0 bg-card text-card-foreground border-t border-border transition-transform duration-300 ease-in-out z-50 flex flex-col shadow-lg",
-					isOpen ? "translate-y-0 h-64" : "translate-y-full h-0",
+					isOpen ? "translate-y-0" : "translate-y-full pointer-events-none",
 				)}
 			>
 				<div className="flex items-center justify-between px-4 py-2 bg-muted/40 border-b border-border">
@@ -136,8 +143,13 @@ export function TerminalDrawer({ job, isOpen, onClose }: TerminalDrawerProps) {
 					ref={scrollRef}
 					onScroll={() => {
 						if (!scrollRef.current) return;
-						setScrollTop(scrollRef.current.scrollTop);
-						updateBottomStickiness();
+						cancelAnimationFrame(rafIdRef.current);
+						rafIdRef.current = requestAnimationFrame(() => {
+							if (scrollRef.current) {
+								setScrollTop(scrollRef.current.scrollTop);
+								updateBottomStickiness();
+							}
+						});
 					}}
 					className="flex-1 overflow-auto p-4 font-mono text-xs text-foreground"
 				>

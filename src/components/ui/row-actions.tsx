@@ -42,7 +42,7 @@ function RowActions({ actions, className }: RowActionsProps) {
 						variant="ghost"
 						size="icon"
 						className={cn(
-							"h-8 w-8 transition-all duration-150 hover:scale-110",
+							"h-8 w-8 transition-[transform,opacity] duration-150 hover:scale-110",
 							baseClass,
 							variant === "destructive"
 								? "focus-visible:opacity-100"

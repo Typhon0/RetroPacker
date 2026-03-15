@@ -1,5 +1,6 @@
 import { AlertTriangle } from "lucide-react";
-import type * as React from "react";
+import type * as ReactTypes from "react";
+import React from "react";
 import {
 	Select,
 	SelectContent,
@@ -21,10 +22,10 @@ interface PlatformSelectorProps {
 	isDisabled?: boolean;
 	showMixed?: boolean;
 	className?: string;
-	onClick?: (e: React.MouseEvent) => void;
+	onClick?: (e: ReactTypes.MouseEvent) => void;
 }
 
-function PlatformSelector({
+function PlatformSelectorComponent({
 	value,
 	onChange,
 	detectedSystem,
@@ -46,12 +47,27 @@ function PlatformSelector({
 		!OVERRIDE_PLATFORMS.includes(detectedSystem.toLowerCase() as Platform) &&
 		detectedSystem !== "Unknown";
 
+	// Memoize the value change handler to prevent creating new functions on every render
+	const handleValueChange = React.useCallback(
+		(val: string) => {
+			if (val) onChange(val as Platform);
+		},
+		[onChange],
+	);
+
+	// Memoize the click handler to prevent creating new functions on every render
+	const handleTriggerClick = React.useCallback(
+		(e: ReactTypes.MouseEvent) => {
+			e.stopPropagation();
+			onClick?.(e);
+		},
+		[onClick],
+	);
+
 	return (
 		<Select
 			value={isUnknownBlocked ? "" : displayValue}
-			onValueChange={(val) => {
-				if (val) onChange(val as Platform);
-			}}
+			onValueChange={handleValueChange}
 			disabled={isDisabled}
 		>
 			<SelectTrigger
@@ -62,10 +78,7 @@ function PlatformSelector({
 					isUnknownBlocked && "border-warning/50 text-warning",
 					className,
 				)}
-				onClick={(e) => {
-					e.stopPropagation();
-					onClick?.(e);
-				}}
+				onClick={handleTriggerClick}
 			>
 				{isUnknownBlocked ? (
 					<span className="flex items-center gap-1">
@@ -92,5 +105,7 @@ function PlatformSelector({
 		</Select>
 	);
 }
+
+const PlatformSelector = React.memo(PlatformSelectorComponent);
 
 export { PlatformSelector, type PlatformSelectorProps };

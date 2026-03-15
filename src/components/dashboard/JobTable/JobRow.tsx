@@ -227,6 +227,31 @@ const JobRowComponent = ({
 	const linkExt =
 		linkedCompanionFilename?.split(".").pop()?.toUpperCase() || "LINK";
 
+	// Memoize row actions to prevent unnecessary re-renders of RowActions
+	const rowActions = React.useMemo(
+		() =>
+			createJobRowActions({
+				status,
+				filename: job.filename,
+				onStart: () => onStart(job.id),
+				onOpenLocation: () => onOpenLocation(job.id),
+				onRemove: () => onRemove(job.id),
+			}),
+		[status, job.filename, job.id, onStart, onOpenLocation, onRemove],
+	);
+
+	// Memoize platform change handler for PlatformSelector
+	const handlePlatformChange = React.useCallback(
+		(val: Platform | undefined) => onUpdatePlatform(job.id, val),
+		[job.id, onUpdatePlatform],
+	);
+
+	// Memoize select handler for TableRow
+	const handleSelect = React.useCallback(
+		() => onSelect(job.id),
+		[job.id, onSelect],
+	);
+
 	return (
 		<TableRow
 			className={cn(
@@ -234,7 +259,7 @@ const JobRowComponent = ({
 				isSelected && "bg-muted/50",
 				isUnknownBlocked && "border-l-2 border-l-warning bg-warning/5",
 			)}
-			onClick={() => onSelect(job.id)}
+			onClick={handleSelect}
 		>
 			<TableCell style={{ paddingLeft: `${depth * 16 + 8}px` }}>
 				<div className="flex items-center gap-2">
@@ -285,7 +310,7 @@ const JobRowComponent = ({
 				{status === "pending" || isUnknownBlocked ? (
 					<PlatformSelector
 						value={platformOverride}
-						onChange={(val) => onUpdatePlatform(job.id, val)}
+						onChange={handlePlatformChange}
 						detectedSystem={system}
 						isDisabled={isDisabled}
 					/>
@@ -297,15 +322,7 @@ const JobRowComponent = ({
 			<JobEtaCell job={job} />
 			<JobSizeCell job={job} />
 			<TableCell className="text-right">
-				<RowActions
-					actions={createJobRowActions({
-						status,
-						filename: job.filename,
-						onStart: () => onStart(job.id),
-						onOpenLocation: () => onOpenLocation(job.id),
-						onRemove: () => onRemove(job.id),
-					})}
-				/>
+				<RowActions actions={rowActions} />
 			</TableCell>
 		</TableRow>
 	);

@@ -4,7 +4,7 @@
  * @module components/dashboard/JobTable/JobTable
  */
 
-import { ChevronsUpDown, Filter } from "lucide-react";
+import { Filter, FolderInput, FolderOpen } from "lucide-react";
 import {
 	type ReactNode,
 	useCallback,
@@ -808,18 +808,23 @@ export function JobTable({
 				</div>
 
 				<div className="flex items-center gap-1 ml-auto">
-					<Button variant="ghost" size="sm" onClick={expandAll} className="h-8">
-						<ChevronsUpDown className="h-4 w-4 mr-1" />
-						Expand All
+					<Button
+						variant="ghost"
+						size="sm"
+						onClick={expandAll}
+						className="h-8 sm:h-9"
+					>
+						<FolderOpen className="h-4 w-4 mr-1" />
+						<span className="hidden sm:inline">Expand All</span>
 					</Button>
 					<Button
 						variant="ghost"
 						size="sm"
 						onClick={collapseAll}
-						className="h-8"
+						className="h-8 sm:h-9"
 					>
-						<ChevronsUpDown className="h-4 w-4 mr-1" />
-						Collapse All
+						<FolderInput className="h-4 w-4 mr-1" />
+						<span className="hidden sm:inline">Collapse All</span>
 					</Button>
 				</div>
 			</div>

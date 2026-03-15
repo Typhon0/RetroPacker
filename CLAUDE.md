@@ -67,6 +67,35 @@ Retro gaming enthusiasts managing large ROM collections. They run batch operatio
 ### Aesthetic Direction
 **Modern dark utility, inspired by Spotify and Discord.** Clean visual hierarchy, subtle depth, polished but not flashy. Dark mode as the primary theme. The retro pixel-art banner exists for brand recognition but does NOT inform the UI design language. The UI itself should be pure modern software aesthetics.
 
+### Animation Philosophy
+**Smooth and polished, never bouncy or playful.** All motion should feel purposeful and professional. Use the established easing curve `cubic-bezier(0.22, 1, 0.36, 1)` for most animations. Standard timing values: 200ms for interactive transitions (hovers, focus), 300ms for state changes (status badges, drag feedback), 400ms for entrances and completions. The app has four custom keyframes defined in `src/App.css`: `fade-in-up` (entrances), `status-complete` (completion pulse), `drag-bounce` (drop zone feedback), and `progress-complete` (progress bar pulse). Always respect `prefers-reduced-motion: reduce` - the media query is already in place.
+
+### Design Tokens (Quick Reference)
+
+All tokens defined in `src/App.css`. Use these directly; do not invent new colors or values.
+
+**Typography**: `--font-sans: "Geist Variable", sans-serif`
+
+**Border Radius**: `--radius: 0.625rem` (10px) | sm: calc -4px | md: calc -2px | lg: 1rem | xl: calc +8px
+
+**Dark Theme Colors** (primary experience):
+| Token | Value | Usage |
+|---|---|---|
+| `--background` | `oklch(0.145 0 0)` | Page background |
+| `--foreground` | `oklch(0.985 0 0)` | Primary text |
+| `--card` | `oklch(0.205 0 0)` | Elevated surfaces |
+| `--primary` | `oklch(0.922 0 0)` | Interactive elements |
+| `--secondary` | `oklch(0.269 0 0)` | Secondary surfaces |
+| `--muted` | `oklch(0.269 0 0)` | Muted backgrounds |
+| `--muted-foreground` | `oklch(0.708 0 0)` | Muted text |
+| `--border` | `oklch(1 0 0 / 10%)` | Borders |
+| `--destructive` | `oklch(0.704 0.191 22.216)` | Errors/danger |
+| `--success` | `oklch(0.7 0.15 160)` | Success states |
+| `--warning` | `oklch(0.75 0.15 75)` | Warning states |
+| `--info` | `oklch(0.65 0.15 250)` | Info states |
+
+**Component Vocabulary**: Button (variants: default/destructive/outline/secondary/ghost/link), StatusBadge (variants: default/secondary/success/info/warning/destructive), Card (composable: Header/Title/Description/Content/Action/Footer), Dialog, Tabs, Table, Progress, Select, Input, Tooltip, Switch, ScrollArea.
+
 ### Design Principles
 
 1. **Efficiency over decoration** - Every pixel should serve a function. No ornamental elements. Progress indicators, queue status, and action buttons are the core UI surface.
@@ -78,3 +107,5 @@ Retro gaming enthusiasts managing large ROM collections. They run batch operatio
 4. **Polish through restraint** - Subtle shadows, consistent spacing, smooth transitions (not bouncy). Quality is signaled through precision, not personality. The `--radius: 0.625rem` base and consistent spacing scale create visual order.
 
 5. **Standard accessibility (WCAG AA)** - Adequate contrast ratios, keyboard navigation, logical focus order. No special accommodations beyond standard unless requested.
+
+6. **Purposeful motion** - Animations serve feedback and state transitions, never decoration. Use the established keyframes and timing values from `src/App.css`. Keep easing consistent with the project's `cubic-bezier(0.22, 1, 0.36, 1)` curve. Respect reduced-motion preferences.

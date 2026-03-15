@@ -66,8 +66,7 @@ export function DropZone({ workflow }: DropZoneProps) {
 					} else {
 						validFilePaths.push(filePath);
 					}
-				} catch (e) {
-					console.warn(`Failed to stat path ${filePath}`, e);
+				} catch {
 					// Fallback to file processing if stat fails
 					validFilePaths.push(filePath);
 				}
@@ -125,8 +124,7 @@ export function DropZone({ workflow }: DropZoneProps) {
 				} else if (combinedValidJobs.length > 0) {
 					commitAddition(combinedValidJobs);
 				}
-			} catch (e) {
-				console.error("Failed to process paths", e);
+			} catch {
 				setDropError("An error occurred while processing paths.");
 			}
 		},
@@ -206,8 +204,7 @@ export function DropZone({ workflow }: DropZoneProps) {
 					endAnalysis();
 				}
 			}
-		} catch (err) {
-			console.error("Failed to open file dialog", err);
+		} catch {
 			endAnalysis();
 		}
 	}, [
@@ -258,8 +255,8 @@ export function DropZone({ workflow }: DropZoneProps) {
 						endAnalysis();
 					}
 				}
-			} catch (err) {
-				console.error("Failed to open directory dialog", err);
+			} catch {
+				// Error already surfaced to user via dropError state in handleAddFolder
 			}
 		},
 		[
@@ -361,6 +358,27 @@ export function DropZone({ workflow }: DropZoneProps) {
 		[handleClick],
 	);
 
+	const handleAddFilesClick = useCallback(
+		(e: React.MouseEvent) => {
+			e.stopPropagation();
+			handleClick();
+		},
+		[handleClick],
+	);
+
+	const handleConflictDialogClose = useCallback(() => {
+		setIsConflictDialogOpen(false);
+		setPreparedAddition(null);
+	}, []);
+
+	const handleConflictDialogConfirm = useCallback(() => {
+		if (preparedAddition) {
+			commitAddition(preparedAddition.report.validJobs);
+		}
+		setIsConflictDialogOpen(false);
+		setPreparedAddition(null);
+	}, [preparedAddition, commitAddition]);
+
 	return (
 		<div
 			onDragOver={handleDragOver}
@@ -372,11 +390,11 @@ export function DropZone({ workflow }: DropZoneProps) {
 			role="button"
 			tabIndex={isAnalyzing || isConflictDialogOpen ? -1 : 0}
 			className={cn(
-				"bg-card border-2 border-dashed rounded-xl p-8 transition-all duration-200 flex flex-col items-center justify-center text-center cursor-pointer group min-h-[200px]",
+				"surface-card p-8 transition-colors duration-200 flex flex-col items-center justify-center text-center cursor-pointer group min-h-[200px]",
 				isDragging
-					? "border-primary bg-primary/5 scale-[1.01] shadow-lg shadow-primary/5"
+					? "border-primary bg-primary-10 scale-[1.01] shadow-lg shadow-primary-05"
 					: "border-muted-foreground/25 hover:border-muted-foreground/40 hover:bg-muted/5",
-				isAnalyzing ? "cursor-wait opacity-75" : "",
+				isAnalyzing && "cursor-wait opacity-75",
 			)}
 		>
 			{isAnalyzing ? (
@@ -422,10 +440,7 @@ export function DropZone({ workflow }: DropZoneProps) {
 							variant="secondary"
 							size="sm"
 							aria-label={`Add ${workflow} files`}
-							onClick={(e) => {
-								e.stopPropagation();
-								handleClick();
-							}}
+							onClick={handleAddFilesClick}
 						>
 							Add Files
 						</Button>
@@ -448,17 +463,8 @@ export function DropZone({ workflow }: DropZoneProps) {
 			<ConflictDialog
 				isOpen={isConflictDialogOpen}
 				report={preparedAddition?.report ?? null}
-				onClose={() => {
-					setIsConflictDialogOpen(false);
-					setPreparedAddition(null);
-				}}
-				onConfirm={() => {
-					if (preparedAddition) {
-						commitAddition(preparedAddition.report.validJobs);
-					}
-					setIsConflictDialogOpen(false);
-					setPreparedAddition(null);
-				}}
+				onClose={handleConflictDialogClose}
+				onConfirm={handleConflictDialogConfirm}
 			/>
 		</div>
 	);

@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 import { useRepositories } from "@/presentation/context/RepositoryContext";
 import { jobStore } from "@/stores/JobStore";
 import { usePackerStore } from "@/stores/usePackerStore";
@@ -87,45 +88,47 @@ function DatabaseManagerTab() {
 
 	return (
 		<div className="space-y-6">
-			<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-muted/30 rounded-lg border">
-				<div className="flex items-start sm:items-center gap-3">
-					<div className="p-2 bg-primary/10 rounded-full text-primary shrink-0 mt-1 sm:mt-0">
-						<Database className="h-5 w-5" />
+			<div className="surface-card p-4">
+				<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+					<div className="flex items-start sm:items-center gap-3">
+						<div className="p-2 bg-primary-10 rounded-full text-primary shrink-0 mt-1 sm:mt-0">
+							<Database className="h-5 w-5" />
+						</div>
+						<div className="min-w-0">
+							<h4 className="font-medium truncate text-wrap leading-tight">
+								Redump & No-Intro Database
+							</h4>
+							<p className="text-xs text-muted-foreground mt-1">
+								{stats?.row_count
+									? `${stats.row_count.toLocaleString()} signatures loaded`
+									: "No signatures loaded"}
+							</p>
+						</div>
 					</div>
-					<div className="min-w-0">
-						<h4 className="font-medium truncate text-wrap leading-tight">
-							Redump & No-Intro Database
-						</h4>
-						<p className="text-xs text-muted-foreground mt-1">
-							{stats?.row_count
-								? `${stats.row_count.toLocaleString()} signatures loaded`
-								: "No signatures loaded"}
-						</p>
+					<div className="flex flex-wrap items-center gap-2 mt-2 sm:mt-0">
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={handleImport}
+							disabled={isImporting || isSyncing}
+							className="gap-2"
+						>
+							<Upload className="h-4 w-4" />
+							{isImporting ? "Importing..." : "Import DAT"}
+						</Button>
+						<Button
+							variant="default"
+							size="sm"
+							onClick={handleSync}
+							disabled={isSyncing || isImporting}
+							className="gap-2"
+						>
+							<RefreshCw
+								className={cn("h-4 w-4", isSyncing && "animate-spin")}
+							/>
+							{isSyncing ? "Syncing..." : "Auto Sync"}
+						</Button>
 					</div>
-				</div>
-				<div className="flex flex-wrap items-center gap-2 mt-2 sm:mt-0">
-					<Button
-						variant="outline"
-						size="sm"
-						onClick={handleImport}
-						disabled={isImporting || isSyncing}
-						className="gap-2"
-					>
-						<Upload className="h-4 w-4" />
-						{isImporting ? "Importing..." : "Import DAT"}
-					</Button>
-					<Button
-						variant="default"
-						size="sm"
-						onClick={handleSync}
-						disabled={isSyncing || isImporting}
-						className="gap-2"
-					>
-						<RefreshCw
-							className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`}
-						/>
-						{isSyncing ? "Syncing..." : "Auto Sync"}
-					</Button>
 				</div>
 			</div>
 
@@ -255,24 +258,26 @@ export function GlobalSettings() {
 									Workflow Options
 								</h3>
 								<div className="flex flex-col gap-4">
-									<div className="flex items-center justify-between rounded-lg border p-4 bg-card text-card-foreground shadow-sm transition-colors hover:bg-accent/50">
-										<div className="flex flex-col space-y-1">
-											<Label className="text-sm font-medium">
-												Delete source files
-											</Label>
-											<span className="text-sm text-muted-foreground">
-												Move source files to Recycle Bin after successful
-												processing
-											</span>
+									<div className="surface-card p-4 transition-colors hover:bg-accent/50">
+										<div className="flex items-center justify-between">
+											<div className="flex flex-col space-y-1">
+												<Label className="text-sm font-medium">
+													Delete source files
+												</Label>
+												<span className="text-sm text-muted-foreground">
+													Move source files to Recycle Bin after successful
+													processing
+												</span>
+											</div>
+											<Switch
+												checked={deleteSourceAfterSuccess}
+												onCheckedChange={setDeleteSourceAfterSuccess}
+											/>
 										</div>
-										<Switch
-											checked={deleteSourceAfterSuccess}
-											onCheckedChange={setDeleteSourceAfterSuccess}
-										/>
 									</div>
 
 									{/* Output Directory */}
-									<div className="flex flex-col gap-3 rounded-lg border p-4 bg-card text-card-foreground shadow-sm transition-colors hover:bg-accent/50">
+									<div className="surface-card p-4 transition-colors hover:bg-accent/50">
 										<div className="flex flex-col space-y-1">
 											<Label className="text-sm font-medium">
 												Output directory
@@ -283,16 +288,16 @@ export function GlobalSettings() {
 											</span>
 										</div>
 										<div className="flex items-center gap-2 mt-1">
-											<button
-												type="button"
+											<Button
+												variant="outline"
+												className="flex-1 justify-start min-w-0 h-10"
 												onClick={handlePickOutputDir}
-												className="flex items-center gap-2 flex-1 h-10 px-3 rounded-md border border-input bg-background hover:bg-accent/50 hover:text-accent-foreground text-sm transition-colors shadow-sm min-w-0"
 											>
 												<FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
 												<span className="truncate">
 													{outputDirectory || "Same as source"}
 												</span>
-											</button>
+											</Button>
 											{outputDirectory && (
 												<Button
 													variant="outline"
@@ -333,7 +338,7 @@ export function GlobalSettings() {
 									</p>
 
 									<TabsContent value="chd" className="animate-in fade-in-50">
-										<div className="flex flex-col gap-4 rounded-lg border p-4 bg-card text-card-foreground shadow-sm">
+										<div className="surface-card p-4">
 											{preset === "custom" && (
 												<div className="flex flex-col gap-2 pb-4 border-b">
 													<Label
@@ -350,7 +355,7 @@ export function GlobalSettings() {
 														}
 														placeholder="lzma,zlib,huff"
 													/>
-													<span className="text-[10px] text-muted-foreground mt-0.5">
+													<span className="text-xs text-muted-foreground mt-0.5">
 														Comma-separated list of codecs
 													</span>
 												</div>
@@ -375,7 +380,7 @@ export function GlobalSettings() {
 													}}
 													placeholder="Auto (Default)"
 												/>
-												<span className="text-[10px] text-muted-foreground mt-0.5">
+												<span className="text-xs text-muted-foreground mt-0.5">
 													Bytes (e.g. 2048 for DVD). Leave empty for auto.
 												</span>
 											</div>
@@ -415,7 +420,7 @@ export function GlobalSettings() {
 										value="nintendo"
 										className="animate-in fade-in-50"
 									>
-										<div className="flex flex-col gap-4 rounded-lg border p-4 bg-card text-card-foreground shadow-sm">
+										<div className="surface-card p-4">
 											<div className="flex flex-col gap-1.5">
 												<Label className="text-sm font-medium">
 													Output Format
@@ -426,7 +431,7 @@ export function GlobalSettings() {
 														val &&
 														setDolphinSetting(
 															"format",
-															val as "rvz" | "iso" | "gcz" | "wia",
+															val as "rvz" | "iso" | "gcz" | "wia" | "wbfs",
 														)
 													}
 												>
@@ -436,6 +441,9 @@ export function GlobalSettings() {
 													<SelectContent>
 														<SelectItem value="rvz">
 															RVZ (Modern / Recommended)
+														</SelectItem>
+														<SelectItem value="wbfs">
+															WBFS (Wii / USB Loaders)
 														</SelectItem>
 														<SelectItem value="iso">
 															ISO (Uncompressed)
@@ -467,7 +475,7 @@ export function GlobalSettings() {
 														<SelectItem value="2097152">2 MiB</SelectItem>
 													</SelectContent>
 												</Select>
-												<span className="text-[10px] text-muted-foreground mt-0.5">
+												<span className="text-xs text-muted-foreground mt-0.5">
 													Larger blocks compress better but seek slower.
 												</span>
 											</div>
@@ -496,7 +504,7 @@ export function GlobalSettings() {
 														<SelectItem value="crc32">CRC32</SelectItem>
 													</SelectContent>
 												</Select>
-												<span className="text-[10px] text-muted-foreground mt-0.5">
+												<span className="text-xs text-muted-foreground mt-0.5">
 													SHA-1 is required to verify against Redump/No-Intro.
 												</span>
 											</div>
@@ -520,58 +528,64 @@ export function GlobalSettings() {
 									Troubleshooting & Logs
 								</h3>
 								<div className="flex flex-col gap-4">
-									<div className="flex items-center justify-between rounded-lg border p-4 bg-card text-card-foreground shadow-sm transition-colors hover:bg-accent/50">
-										<div className="flex flex-col space-y-1">
-											<Label className="text-sm font-medium">
-												Enable Detection Tracing
-											</Label>
-											<span className="text-sm text-muted-foreground">
-												Prints detailed platform detection steps to the
-												developer console for troubleshooting Unknown matches.
-											</span>
+									<div className="surface-card p-4 transition-colors hover:bg-accent/50">
+										<div className="flex items-center justify-between">
+											<div className="flex flex-col space-y-1">
+												<Label className="text-sm font-medium">
+													Enable Detection Tracing
+												</Label>
+												<span className="text-sm text-muted-foreground">
+													Prints detailed platform detection steps to the
+													developer console for troubleshooting Unknown matches.
+												</span>
+											</div>
+											<Switch
+												checked={enableDetectionTracing}
+												onCheckedChange={setEnableDetectionTracing}
+											/>
 										</div>
-										<Switch
-											checked={enableDetectionTracing}
-											onCheckedChange={setEnableDetectionTracing}
-										/>
 									</div>
 
-									<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-lg border p-4 bg-card text-card-foreground shadow-sm transition-colors hover:bg-accent/50">
-										<div className="flex flex-col space-y-1">
-											<Label className="text-sm font-medium">
-												Export Session Logs
-											</Label>
-											<span className="text-sm text-muted-foreground">
-												Save all current job logs and statuses to a file for
-												troubleshooting.
-											</span>
+									<div className="surface-card p-4 transition-colors hover:bg-accent/50">
+										<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+											<div className="flex flex-col space-y-1">
+												<Label className="text-sm font-medium">
+													Export Session Logs
+												</Label>
+												<span className="text-sm text-muted-foreground">
+													Save all current job logs and statuses to a file for
+													troubleshooting.
+												</span>
+											</div>
+											<Button
+												onClick={handleExportLogs}
+												className="shrink-0 gap-2 h-10 px-4"
+												variant="secondary"
+											>
+												<Download className="h-4 w-4" /> Export Logs
+											</Button>
 										</div>
-										<Button
-											onClick={handleExportLogs}
-											className="shrink-0 gap-2 h-10 px-4"
-											variant="secondary"
-										>
-											<Download className="h-4 w-4" /> Export Logs
-										</Button>
 									</div>
 
-									<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-lg border p-4 bg-card text-card-foreground shadow-sm transition-colors hover:bg-accent/50">
-										<div className="flex flex-col space-y-1">
-											<Label className="text-sm font-medium">
-												Configuration Folder
-											</Label>
-											<span className="text-sm text-muted-foreground">
-												Open the directory where application settings and cache
-												are stored.
-											</span>
+									<div className="surface-card p-4 transition-colors hover:bg-accent/50">
+										<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+											<div className="flex flex-col space-y-1">
+												<Label className="text-sm font-medium">
+													Configuration Folder
+												</Label>
+												<span className="text-sm text-muted-foreground">
+													Open the directory where application settings and
+													cache are stored.
+												</span>
+											</div>
+											<Button
+												onClick={handleOpenConfigFolder}
+												className="shrink-0 gap-2 h-10 px-4"
+												variant="secondary"
+											>
+												<Folder className="h-4 w-4" /> Config Folder
+											</Button>
 										</div>
-										<Button
-											onClick={handleOpenConfigFolder}
-											className="shrink-0 gap-2 h-10 px-4"
-											variant="secondary"
-										>
-											<Folder className="h-4 w-4" /> Config Folder
-										</Button>
 									</div>
 								</div>
 							</div>

@@ -6,7 +6,7 @@ import {
 	ShieldCheck,
 } from "lucide-react";
 import type React from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { WorkflowType } from "@/domain/types/workflow.types";
 import { useSignalValue } from "@/hooks/useSignalValue";
@@ -74,10 +74,21 @@ export function WorkflowTabs() {
 		}
 	}, [selectedJob, selectedJobId]);
 
-	const handleTabChange = (val: string) => {
-		setActiveWorkflow(val as WorkflowType);
+	const handleTabChange = useCallback(
+		(val: string) => {
+			setActiveWorkflow(val as WorkflowType);
+			setSelectedJobId(undefined);
+		},
+		[setActiveWorkflow],
+	);
+
+	const handleCloseTerminal = useCallback(() => {
 		setSelectedJobId(undefined);
-	};
+	}, []);
+
+	const handleSelectJob = useCallback((job: { id: string }) => {
+		setSelectedJobId(job.id);
+	}, []);
 
 	return (
 		<div className="flex flex-col h-full gap-4 relative">
@@ -140,7 +151,7 @@ export function WorkflowTabs() {
 								<div className="flex-1 min-h-0">
 									<JobTable
 										workflow={workflow}
-										onSelectJob={(job) => setSelectedJobId(job.id)}
+										onSelectJob={handleSelectJob}
 										selectedJobId={selectedJobId}
 									/>
 								</div>
@@ -154,7 +165,7 @@ export function WorkflowTabs() {
 			<TerminalDrawer
 				job={selectedJob}
 				isOpen={!!selectedJob}
-				onClose={() => setSelectedJobId(undefined)}
+				onClose={handleCloseTerminal}
 			/>
 		</div>
 	);

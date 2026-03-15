@@ -11,7 +11,7 @@ export type MediaType = "auto" | "cd" | "dvd" | "hdd" | "ld" | "raw";
 /**
  * Output format for DolphinTool.
  */
-export type DolphinFormat = "rvz" | "iso" | "gcz" | "wia";
+export type DolphinFormat = "rvz" | "iso" | "gcz" | "wia" | "wbfs";
 
 /**
  * Compression algorithm for DolphinTool.
