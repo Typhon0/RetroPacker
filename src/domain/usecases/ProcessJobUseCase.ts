@@ -51,8 +51,28 @@ export class ProcessJobUseCase {
 	// Static lock to prevent double-spawning the same job
 	private static readonly spawnLock = new Set<string>();
 
+	private static getErrorMessage(error: unknown): string {
+		if (error instanceof Error && error.message.trim()) {
+			return error.message;
+		}
+		if (typeof error === "string" && error.trim()) {
+			return error;
+		}
+		if (error && typeof error === "object") {
+			const maybeMessage = Reflect.get(error, "message");
+			if (typeof maybeMessage === "string" && maybeMessage.trim()) {
+				return maybeMessage;
+			}
+			const maybeError = Reflect.get(error, "error");
+			if (typeof maybeError === "string" && maybeError.trim()) {
+				return maybeError;
+			}
+		}
+		return "Failed to spawn process";
+	}
+
 	public static formatSidecarError(error: unknown, exitCode?: number): string {
-		const msg = error instanceof Error ? error.message : String(error);
+		const msg = ProcessJobUseCase.getErrorMessage(error);
 		const lowerMsg = msg.toLowerCase();
 		if (
 			lowerMsg.includes("enoent") ||
@@ -63,6 +83,9 @@ export class ProcessJobUseCase {
 		}
 		if (lowerMsg.includes("eacces") || lowerMsg.includes("permission denied")) {
 			return "Permission Denied: Lacking rights to execute the sidecar binary.";
+		}
+		if (lowerMsg.includes("failed to spawn process")) {
+			return "Failed to start sidecar process. Ensure bundled sidecars are present and allowed by shell permissions.";
 		}
 		if (lowerMsg.includes("corrupt") || lowerMsg.includes("invalid")) {
 			return `Corrupted Output: The tool encountered invalid or corrupted data. (${msg})`;
@@ -75,7 +98,7 @@ export class ProcessJobUseCase {
 
 	private static readonly MIN_PROGRESS_DELTA_PERCENT = 0.25;
 	private static readonly PROGRESS_UPDATE_MIN_INTERVAL_MS = 150;
-	private static readonly TEMP_DIR_NAME = ".retropacker_temp";
+	private static readonly TEMP_ROOT_DIR_NAME = "retropacker_temp";
 
 	constructor(private readonly deps: ProcessJobDependencies) {}
 
@@ -169,10 +192,13 @@ export class ProcessJobUseCase {
 			ProcessJobUseCase.spawnLock.delete(lockKey);
 		};
 
-		// Create temp dir once — used by both CUE preprocessing and DolphinTool
+		// Create a per-job working directory inside OS temp.
+		const tempRoot = await this.deps.fileSystem.getTempDir();
 		const tempDir = await this.deps.fileSystem.joinPath(
-			outputDir,
-			ProcessJobUseCase.TEMP_DIR_NAME,
+			tempRoot,
+			ProcessJobUseCase.TEMP_ROOT_DIR_NAME,
+			workflow,
+			job.id,
 		);
 
 		try {
@@ -183,6 +209,7 @@ export class ProcessJobUseCase {
 				);
 				return;
 			}
+			await this.deps.fileSystem.createDirectory(tempDir);
 
 			// Mark job as processing
 			job.setStatus("processing");
@@ -291,6 +318,7 @@ export class ProcessJobUseCase {
 				workflow,
 				settings,
 				usesDolphin,
+				tempDir,
 				overrideInputPath,
 			);
 
@@ -532,10 +560,8 @@ export class ProcessJobUseCase {
 				return;
 			}
 
-			const rawErrorMessage =
-				e instanceof Error ? e.message : "Failed to spawn process";
-			const errorMessage =
-				ProcessJobUseCase.formatSidecarError(rawErrorMessage);
+			console.error(`[ProcessJobUseCase] Failed to spawn ${lockKey}:`, e);
+			const errorMessage = ProcessJobUseCase.formatSidecarError(e);
 			job.setStatus("failed");
 			job.setErrorMessage(errorMessage);
 			job.appendLog(`Exception: ${errorMessage}`);
@@ -606,6 +632,7 @@ export class ProcessJobUseCase {
 		workflow: WorkflowType,
 		settings: ProcessJobSettings,
 		usesDolphin: boolean,
+		tempDir: string,
 		overrideInputPath?: string,
 	): Promise<string[]> {
 		const outputBaseName = this.getOutputBaseName(job.filename);
@@ -617,7 +644,7 @@ export class ProcessJobUseCase {
 				settings,
 				this.deps.fileSystem,
 				outputBaseName,
-				ProcessJobUseCase.TEMP_DIR_NAME,
+				tempDir,
 			);
 		}
 		return ChdmanCommandBuilder.buildArgs(

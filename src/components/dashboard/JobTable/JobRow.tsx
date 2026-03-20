@@ -172,7 +172,7 @@ const JobSizeCell = React.memo(({ job }: { job: JobState }) => {
 		estimatedSavedBytes !== undefined && estimatedSavedBytes >= 0;
 
 	return (
-		<TableCell className="text-right">
+		<TableCell className="text-end">
 			<div className="inline-flex max-w-full items-center justify-end gap-1.5 whitespace-nowrap text-xs font-mono">
 				<span className="text-muted-foreground">
 					{formatSize(job.originalSize)}
@@ -257,11 +257,11 @@ const JobRowComponent = ({
 			className={cn(
 				"cursor-pointer hover:bg-muted/10 group",
 				isSelected && "bg-muted/50",
-				isUnknownBlocked && "border-l-2 border-l-warning bg-warning/5",
+				isUnknownBlocked && "border-s-2 border-s-warning bg-warning/5",
 			)}
 			onClick={handleSelect}
 		>
-			<TableCell style={{ paddingLeft: `${depth * 16 + 8}px` }}>
+			<TableCell style={{ paddingInlineStart: `${depth * 16 + 8}px` }}>
 				<div className="flex items-center gap-2">
 					{isUnknownBlocked ? (
 						<AlertTriangle className="h-4 w-4 text-warning" />
@@ -281,7 +281,7 @@ const JobRowComponent = ({
 							<span className="truncate text-sm leading-none">
 								{job.filename}
 							</span>
-							<span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-secondary text-secondary-foreground">
+							<span className="shrink-0 rounded px-1.5 py-0.5 text-xs font-bold uppercase tracking-wider bg-secondary text-secondary-foreground">
 								{mainExt}
 							</span>
 						</div>
@@ -293,7 +293,7 @@ const JobRowComponent = ({
 							<span className="truncate text-sm leading-none">
 								{linkedCompanionFilename}
 							</span>
-							<span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-muted text-muted-foreground">
+							<span className="shrink-0 rounded px-1.5 py-0.5 text-xs font-bold uppercase tracking-wider bg-muted text-muted-foreground">
 								{linkExt}
 							</span>
 						</div>
@@ -321,7 +321,7 @@ const JobRowComponent = ({
 			<JobProgressCell job={job} />
 			<JobEtaCell job={job} />
 			<JobSizeCell job={job} />
-			<TableCell className="text-right">
+			<TableCell className="text-end">
 				<RowActions actions={rowActions} />
 			</TableCell>
 		</TableRow>

@@ -11,12 +11,15 @@ export function useSleepPrevention() {
 
 	const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 	const lastActionRef = useRef<"acquire" | "release" | null>(null);
+	const wakeLockUnavailable = useRef(false);
 
 	useEffect(() => {
 		const shouldHaveLock = anyProcessing && hasActiveJobs;
 
 		if (shouldHaveLock && lastActionRef.current !== "acquire") {
 			const requestWakeLock = async () => {
+				if (wakeLockUnavailable.current) return;
+
 				if (!wakeLockRef.current && "wakeLock" in navigator) {
 					try {
 						wakeLockRef.current = await navigator.wakeLock.request("screen");
@@ -27,6 +30,7 @@ export function useSleepPrevention() {
 							wakeLockRef.current = null;
 						});
 					} catch (e) {
+						wakeLockUnavailable.current = true;
 						console.warn("Wake lock request failed:", e);
 					}
 				}
@@ -52,7 +56,9 @@ export function useSleepPrevention() {
 
 		return () => {
 			if (wakeLockRef.current) {
-				wakeLockRef.current.release().catch(() => {});
+				wakeLockRef.current
+					.release()
+					.catch((e) => console.warn("Wake lock release failed:", e));
 				wakeLockRef.current = null;
 			}
 		};
@@ -64,7 +70,8 @@ export function useSleepPrevention() {
 				document.visibilityState === "visible" &&
 				hasActiveJobs &&
 				anyProcessing &&
-				!wakeLockRef.current
+				!wakeLockRef.current &&
+				!wakeLockUnavailable.current
 			) {
 				if ("wakeLock" in navigator) {
 					try {
@@ -72,6 +79,7 @@ export function useSleepPrevention() {
 						lastActionRef.current = "acquire";
 						console.log("Wake lock re-acquired after visibility change");
 					} catch (e) {
+						wakeLockUnavailable.current = true;
 						console.warn("Failed to re-acquire wake lock:", e);
 					}
 				}

@@ -13,6 +13,7 @@ import type {
 	ConflictReport,
 	JobConflict,
 } from "@/domain/services/QueueAnalyzerService";
+import { pluralize } from "@/lib/utils";
 
 interface ConflictDialogProps {
 	isOpen: boolean;
@@ -71,10 +72,10 @@ export function ConflictDialog({
 						Queue Conflicts Detected
 					</DialogTitle>
 					<DialogDescription>
-						{conflicts.length} conflict{conflicts.length === 1 ? "" : "s"} found
+						{pluralize(conflicts.length, "conflict found")}
 						while trying to add files to the queue.
 						{validJobs.length > 0
-							? ` You can skip these and add the ${validJobs.length} clean file${validJobs.length === 1 ? "" : "s"}.`
+							? ` You can skip these and add the ${pluralize(validJobs.length, "clean file")}.`
 							: " No valid files can be added."}
 					</DialogDescription>
 				</DialogHeader>

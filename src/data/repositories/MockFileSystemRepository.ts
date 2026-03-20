@@ -61,6 +61,13 @@ export class MockFileSystemRepository implements IFileSystemRepository {
 	}
 
 	/**
+	 * Return a mock OS temp directory path.
+	 */
+	async getTempDir(): Promise<string> {
+		return "/mock/temp";
+	}
+
+	/**
 	 * Get parent directory.
 	 */
 	async dirname(path: string): Promise<string> {

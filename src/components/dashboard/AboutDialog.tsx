@@ -18,9 +18,11 @@ export function AboutDialog() {
 	useEffect(() => {
 		getVersion()
 			.then((v) => setVersion(v))
+			// Version unavailable - acceptable fallback
 			.catch(() => {});
 		getTauriVersion()
 			.then((v) => setTauriVersion(v))
+			// Version unavailable - acceptable fallback
 			.catch(() => {});
 	}, []);
 

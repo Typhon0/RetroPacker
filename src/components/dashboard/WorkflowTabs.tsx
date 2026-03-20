@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { WorkflowType } from "@/domain/types/workflow.types";
 import { useSignalValue } from "@/hooks/useSignalValue";
+import { pluralize } from "@/lib/utils";
 import { jobStore } from "@/stores/JobStore";
 import { usePackerStore } from "@/stores/usePackerStore";
 import { DropZone } from "./DropZone";
@@ -120,8 +121,7 @@ export function WorkflowTabs() {
 				{blockedUnknownCount > 0 && (
 					<div className="mt-3 inline-flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs font-medium text-warning">
 						<AlertTriangle className="h-4 w-4" />
-						{blockedUnknownCount} job
-						{blockedUnknownCount === 1 ? "" : "s"} blocked: platform unknown.
+						{pluralize(blockedUnknownCount, "job blocked: platform unknown.")}
 						Select a platform in the row to process.
 					</div>
 				)}

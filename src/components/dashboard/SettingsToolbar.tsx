@@ -23,7 +23,7 @@ export function SettingsToolbar() {
 				value={platform}
 				onValueChange={(val) => setPlatform(val as Platform)}
 			>
-				<SelectTrigger className="h-8 flex-1 min-w-[80px] max-w-[120px] text-xs bg-transparent dark:bg-transparent dark:hover:bg-transparent">
+				<SelectTrigger className="h-8 flex-1 min-w-[5rem] max-w-[10rem] text-xs border-none bg-transparent dark:bg-transparent dark:hover:bg-transparent">
 					<SelectValue placeholder="Platform" />
 				</SelectTrigger>
 				<SelectContent>
@@ -44,7 +44,7 @@ export function SettingsToolbar() {
 				value={preset}
 				onValueChange={(val) => setPreset(val as CompressionPreset)}
 			>
-				<SelectTrigger className="h-8 flex-1 min-w-[100px] max-w-[140px] text-xs bg-transparent dark:bg-transparent dark:hover:bg-transparent">
+				<SelectTrigger className="h-8 flex-1 min-w-[6rem] max-w-[10rem] border-none text-xs bg-transparent dark:bg-transparent dark:hover:bg-transparent">
 					<div className="flex items-center gap-2">
 						<Cpu className="h-3 w-3 shrink-0" />
 						<span className="truncate">
@@ -64,7 +64,7 @@ export function SettingsToolbar() {
 					<SelectItem value="balanced">
 						<div className="flex flex-col items-start">
 							<span>Balanced</span>
-							<span className="text-[10px] text-muted-foreground">
+							<span className="text-xs text-muted-foreground">
 								Normal (lzma/zstd-5)
 							</span>
 						</div>
@@ -72,7 +72,7 @@ export function SettingsToolbar() {
 					<SelectItem value="max">
 						<div className="flex flex-col items-start">
 							<span>Max Compression</span>
-							<span className="text-[10px] text-muted-foreground">
+							<span className="text-xs text-muted-foreground">
 								High (lzma/zstd-19)
 							</span>
 						</div>
@@ -80,7 +80,7 @@ export function SettingsToolbar() {
 					<SelectItem value="fast">
 						<div className="flex flex-col items-start">
 							<span>Fast Use</span>
-							<span className="text-[10px] text-muted-foreground">
+							<span className="text-xs text-muted-foreground">
 								Quickest (zstd)
 							</span>
 						</div>
@@ -88,15 +88,13 @@ export function SettingsToolbar() {
 					<SelectItem value="raw">
 						<div className="flex flex-col items-start">
 							<span>Uncompressed</span>
-							<span className="text-[10px] text-muted-foreground">
-								Store only
-							</span>
+							<span className="text-xs text-muted-foreground">Store only</span>
 						</div>
 					</SelectItem>
 					<SelectItem value="custom">
 						<div className="flex flex-col items-start">
 							<span>Custom</span>
-							<span className="text-[10px] text-muted-foreground">
+							<span className="text-xs text-muted-foreground">
 								Detailed config
 							</span>
 						</div>

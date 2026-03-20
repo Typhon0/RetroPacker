@@ -1,6 +1,6 @@
 "use client";
 
-import type * as React from "react";
+import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -52,10 +52,32 @@ function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">) {
 	);
 }
 
-function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
+function TableRow({
+	className,
+	tabIndex,
+	onKeyDown,
+	...props
+}: React.ComponentProps<"tr">) {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const handleKeyDown = React.useCallback(
+		(e: React.KeyboardEvent<HTMLTableRowElement>) => {
+			if (e.key === "Enter" || e.key === " ") {
+				e.preventDefault();
+				// Trigger click handler if present
+				if (props.onClick) {
+					(props.onClick as (...args: any[]) => void)(e);
+				}
+			}
+			onKeyDown?.(e);
+		},
+		[props.onClick, onKeyDown],
+	);
+
 	return (
 		<tr
 			data-slot="table-row"
+			tabIndex={tabIndex ?? 0}
+			onKeyDown={handleKeyDown}
 			className={cn(
 				"border-b transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:bg-muted/50 data-[state=selected]:bg-muted",
 				className,
@@ -70,7 +92,7 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
 		<th
 			data-slot="table-head"
 			className={cn(
-				"h-10 px-2 text-left align-middle font-medium whitespace-nowrap text-foreground [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+				"h-10 px-2 text-start align-middle font-medium text-foreground [&:has([role=checkbox])]:pe-0 [&>[role=checkbox]]:translate-y-[2px]",
 				className,
 			)}
 			{...props}
@@ -83,7 +105,7 @@ function TableCell({ className, ...props }: React.ComponentProps<"td">) {
 		<td
 			data-slot="table-cell"
 			className={cn(
-				"p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+				"p-2 align-middle min-w-0 overflow-hidden [&:has([role=checkbox])]:pe-0 [&>[role=checkbox]]:translate-y-[2px]",
 				className,
 			)}
 			{...props}

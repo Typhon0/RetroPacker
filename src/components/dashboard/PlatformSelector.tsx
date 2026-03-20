@@ -39,8 +39,8 @@ function PlatformSelectorComponent({
 
 	const displayValue = value || detectedSystem?.toLowerCase() || "";
 	const triggerWidth = isUnknownBlocked
-		? "w-[180px] sm:w-[250px]"
-		: "w-[100px] sm:w-[140px]";
+		? "min-w-[10rem] max-w-[16rem]"
+		: "min-w-[6rem] max-w-[10rem]";
 
 	const showDetected =
 		detectedSystem &&

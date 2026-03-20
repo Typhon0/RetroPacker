@@ -6,7 +6,12 @@
  */
 
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { appDataDir, join, dirname as pathDirname } from "@tauri-apps/api/path";
+import {
+	appDataDir,
+	join,
+	dirname as pathDirname,
+	tempDir,
+} from "@tauri-apps/api/path";
 import {
 	exists,
 	mkdir,
@@ -86,6 +91,13 @@ export class TauriFileSystemRepository implements IFileSystemRepository {
 	 */
 	async getAppDataDir(): Promise<string> {
 		return appDataDir();
+	}
+
+	/**
+	 * Get operating system temp directory path.
+	 */
+	async getTempDir(): Promise<string> {
+		return tempDir();
 	}
 
 	/**

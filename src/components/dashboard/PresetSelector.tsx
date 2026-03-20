@@ -25,7 +25,7 @@ export function PresetSelector() {
 					value={preset}
 					onValueChange={(val) => setPreset(val as CompressionPreset)}
 				>
-					<SelectTrigger className="w-[240px]">
+					<SelectTrigger className="min-w-[12rem] max-w-[16rem]">
 						<SelectValue placeholder="Select a preset" />
 					</SelectTrigger>
 					<SelectContent>

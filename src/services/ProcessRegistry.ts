@@ -43,13 +43,17 @@ export function register(
 
 	// Race condition fix: Check if job was cancelled while spawning
 	if (cancelledJobs.has(key)) {
-		terminateProcess(process).catch(() => {});
+		terminateProcess(process).catch((err) =>
+			console.warn("Process termination failed:", err),
+		);
 		return;
 	}
 
 	// Race condition fix: Check if entire workflow was cancelled
 	if (cancelledWorkflows.has(workflow)) {
-		terminateProcess(process).catch(() => {});
+		terminateProcess(process).catch((err) =>
+			console.warn("Process termination failed:", err),
+		);
 		return;
 	}
 

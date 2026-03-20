@@ -32,6 +32,9 @@ function createMockFileSystem(
 		async getAppDataDir() {
 			return "/mock/app-data";
 		},
+		async getTempDir() {
+			return "/mock/temp";
+		},
 		async dirname(path) {
 			const idx = path.replace(/\\/g, "/").lastIndexOf("/");
 			return idx === -1 ? "." : path.slice(0, idx);

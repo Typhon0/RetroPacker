@@ -124,8 +124,11 @@ export function DropZone({ workflow }: DropZoneProps) {
 				} else if (combinedValidJobs.length > 0) {
 					commitAddition(combinedValidJobs);
 				}
-			} catch {
-				setDropError("An error occurred while processing paths.");
+			} catch (error) {
+				const pathCount = paths.length;
+				setDropError(
+					`Failed to process ${pathCount} item${pathCount === 1 ? "" : "s"}: ${error instanceof Error ? error.message : "Unknown error"}`,
+				);
 			}
 		},
 		[prepareAddFiles, prepareAddFolders, commitAddition, settings, fileSystem],
@@ -450,7 +453,7 @@ export function DropZone({ workflow }: DropZoneProps) {
 							aria-label={`Add ${workflow} folder`}
 							onClick={handleAddFolder}
 						>
-							<FolderPlus className="h-4 w-4 mr-2" aria-hidden="true" />
+							<FolderPlus className="h-4 w-4 me-2" aria-hidden="true" />
 							Add Folder
 						</Button>
 					</div>

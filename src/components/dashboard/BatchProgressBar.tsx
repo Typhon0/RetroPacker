@@ -126,7 +126,7 @@ export function BatchProgressBar({ workflow }: BatchProgressBarProps) {
 							: "border-warning/20 bg-warning/5 text-warning",
 					)}
 				>
-					<span className="text-[10px] uppercase tracking-wide opacity-70">
+					<span className="text-xs uppercase tracking-wide opacity-70">
 						{workflowLabel}
 					</span>
 					<span>{workflowDeltaLabel}</span>
@@ -136,7 +136,7 @@ export function BatchProgressBar({ workflow }: BatchProgressBarProps) {
 
 			{showDistinctGlobalStats && (
 				<span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/20 px-2.5 py-0.5 font-mono text-muted-foreground">
-					<span className="text-[10px] uppercase tracking-wide opacity-70">
+					<span className="text-xs uppercase tracking-wide opacity-70">
 						Global
 					</span>
 					<span>{globalDeltaLabel}</span>

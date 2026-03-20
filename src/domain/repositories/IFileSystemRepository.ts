@@ -75,6 +75,13 @@ export interface IFileSystemRepository {
 	getAppDataDir(): Promise<string>;
 
 	/**
+	 * Get the operating system temporary directory path.
+	 *
+	 * @returns Absolute OS temp directory path
+	 */
+	getTempDir(): Promise<string>;
+
+	/**
 	 * Get the directory name from a path.
 	 *
 	 * @param path - Full path

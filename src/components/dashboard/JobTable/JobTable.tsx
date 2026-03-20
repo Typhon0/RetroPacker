@@ -755,7 +755,7 @@ export function JobTable({
 			{/* Filter Bar */}
 			<div className="flex items-center gap-2 flex-wrap flex-shrink-0 p-3 bg-muted/20 border-b border-border/50">
 				<div className="flex items-center gap-2">
-					<Filter className="h-4 w-4 text-muted-foreground ml-1" />
+					<Filter className="h-4 w-4 text-muted-foreground ms-1" />
 					<Select
 						value={statusFilter}
 						onValueChange={(val) => setStatusFilter(val || "all")}
@@ -807,14 +807,14 @@ export function JobTable({
 					</Select>
 				</div>
 
-				<div className="flex items-center gap-1 ml-auto">
+				<div className="flex items-center gap-1 ms-auto">
 					<Button
 						variant="ghost"
 						size="sm"
 						onClick={expandAll}
 						className="h-8 sm:h-9"
 					>
-						<FolderOpen className="h-4 w-4 mr-1" />
+						<FolderOpen className="h-4 w-4 me-1" />
 						<span className="hidden sm:inline">Expand All</span>
 					</Button>
 					<Button
@@ -823,7 +823,7 @@ export function JobTable({
 						onClick={collapseAll}
 						className="h-8 sm:h-9"
 					>
-						<FolderInput className="h-4 w-4 mr-1" />
+						<FolderInput className="h-4 w-4 me-1" />
 						<span className="hidden sm:inline">Collapse All</span>
 					</Button>
 				</div>
@@ -845,7 +845,7 @@ export function JobTable({
 							<TableHead scope="col">System</TableHead>
 							<TableHead scope="col">Progress</TableHead>
 							<TableHead scope="col">ETA</TableHead>
-							<TableHead scope="col" className="text-right">
+							<TableHead scope="col" className="text-end">
 								Size
 							</TableHead>
 							<TableHead scope="col" className="w-[60px]">

@@ -24,13 +24,13 @@ export class DolphinCommandBuilder {
 		settings: ProcessJobSettings,
 		fileSystem: IFileSystemRepository,
 		outputBaseName: string,
-		tempDirName: string,
+		userDirPath: string,
 	): Promise<string[]> {
 		const { preset, dolphin } = settings;
 		const level = getCompressionLevel(preset);
 
-		// User dir for temp files — reuse the shared temp dir already created by execute()
-		const userDir = await fileSystem.joinPath(outputDir, tempDirName);
+		// User dir for temp files — provided by ProcessJobUseCase (OS temp dir).
+		const userDir = userDirPath;
 		await fileSystem.createDirectory(userDir);
 		const baseArgs = (cmd: string) => [cmd, "-u", userDir];
 

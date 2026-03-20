@@ -140,7 +140,7 @@ export function useQueueProcessor(workflow: WorkflowType) {
 
 			repositories.notificationService
 				.notifySuccess(`${label} Complete`, text)
-				.catch();
+				.catch((err) => console.warn("Notification delivery failed:", err));
 
 			// M3U playlist generation for compress workflow
 			if (workflow === "compress" && queueStats.completedCount > 0) {
@@ -186,7 +186,10 @@ export function useQueueProcessor(workflow: WorkflowType) {
 							}
 						}
 					} catch (err) {
-						console.warn("[QueueProcessor] M3U generation failed:", err);
+						console.warn(
+							`[QueueProcessor] M3U generation failed for workflow ${workflow}:`,
+							err,
+						);
 					}
 				})();
 			}

@@ -1,5 +1,5 @@
 import { Pause, Play, RotateCcw, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AboutDialog } from "@/components/dashboard/AboutDialog";
 import { BatchProgressBar } from "@/components/dashboard/BatchProgressBar";
 import { GlobalSettings } from "@/components/dashboard/GlobalSettings";
@@ -13,7 +13,7 @@ import { useQueueProcessor } from "@/hooks/useQueueProcessor";
 import { useSignalValue } from "@/hooks/useSignalValue";
 import { useSleepPrevention } from "@/hooks/useSleepPrevention";
 import { useTaskbarProgress } from "@/hooks/useTaskbarProgress";
-import { cn } from "@/lib/utils";
+import { cn, pluralize } from "@/lib/utils";
 import { RepositoryProvider } from "@/presentation/context/RepositoryContext";
 import { ProcessRegistry } from "@/services/ProcessRegistry";
 import { jobStore } from "@/stores/JobStore";
@@ -28,6 +28,7 @@ const MAX_CONCURRENCY = 16;
  */
 function AppContent() {
 	const { activeWorkflow, concurrency, setConcurrency } = usePackerStore();
+	const [concurrencyError, setConcurrencyError] = useState<string | null>(null);
 
 	// Activate processors for each workflow (these now use RepositoryContext)
 	useQueueProcessor("compress");
@@ -71,7 +72,15 @@ function AppContent() {
 	const handleConcurrencyChange = useCallback(
 		(e: React.ChangeEvent<HTMLInputElement>) => {
 			const rawValue = parseInt(e.target.value, 10);
-			if (Number.isNaN(rawValue)) return;
+			if (Number.isNaN(rawValue)) {
+				setConcurrencyError("Enter a number");
+				return;
+			}
+			if (rawValue < MIN_CONCURRENCY || rawValue > MAX_CONCURRENCY) {
+				setConcurrencyError(`Must be ${MIN_CONCURRENCY}-${MAX_CONCURRENCY}`);
+			} else {
+				setConcurrencyError(null);
+			}
 			const clamped = Math.min(
 				MAX_CONCURRENCY,
 				Math.max(MIN_CONCURRENCY, rawValue),
@@ -82,6 +91,7 @@ function AppContent() {
 	);
 
 	const handleConcurrencyBlur = useCallback(() => {
+		setConcurrencyError(null);
 		if (concurrency < MIN_CONCURRENCY || concurrency > MAX_CONCURRENCY) {
 			setConcurrency(
 				Math.min(MAX_CONCURRENCY, Math.max(MIN_CONCURRENCY, concurrency)),
@@ -109,6 +119,8 @@ function AppContent() {
 			// until the user clicks Start again to prevent race conditions.
 		} catch (error) {
 			console.error("Failed to cancel processes during clear", error);
+			// Force-clear the queue anyway to prevent UI from being stuck
+			jobStore.clearQueue(activeWorkflow);
 		}
 	}, [activeWorkflow]);
 
@@ -146,15 +158,24 @@ function AppContent() {
 								max={MAX_CONCURRENCY}
 								aria-label="Concurrency level (1–16)"
 								aria-describedby="concurrency-hint"
+								aria-invalid={concurrencyError !== null}
 								className={cn(
 									"flex h-7 w-10 sm:h-6 sm:w-12 rounded bg-background px-1 py-0 text-sm font-semibold transition-colors border border-border/50",
-									"focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50",
+									concurrencyError
+										? "border-destructive focus-visible:ring-destructive"
+										: "focus-visible:ring-primary",
+									"focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50",
 									"text-center",
 								)}
 								value={concurrency}
 								onChange={handleConcurrencyChange}
 								onBlur={handleConcurrencyBlur}
 							/>
+							{concurrencyError && (
+								<span className="text-xs text-destructive absolute -bottom-5 left-0">
+									{concurrencyError}
+								</span>
+							)}
 							<span id="concurrency-hint" className="sr-only">
 								Number of parallel processing jobs, between 1 and 16
 							</span>
@@ -174,9 +195,9 @@ function AppContent() {
 									}
 								>
 									{isProcessing ? (
-										<Pause className="h-4 w-4 mr-2" aria-hidden="true" />
+										<Pause className="h-4 w-4 me-2" aria-hidden="true" />
 									) : (
-										<Play className="h-4 w-4 mr-2" aria-hidden="true" />
+										<Play className="h-4 w-4 me-2" aria-hidden="true" />
 									)}
 									{isProcessing ? "Pause" : "Start"}
 								</Button>
@@ -185,9 +206,9 @@ function AppContent() {
 										variant="outline"
 										size="sm"
 										onClick={handleRetryFailed}
-										aria-label={`Retry ${failedCount} failed job${failedCount === 1 ? "" : "s"}`}
+										aria-label={`Retry ${pluralize(failedCount, "failed job")}`}
 									>
-										<RotateCcw className="h-4 w-4 mr-2" aria-hidden="true" />
+										<RotateCcw className="h-4 w-4 me-2" aria-hidden="true" />
 										Retry {failedCount} Failed
 									</Button>
 								)}
@@ -197,7 +218,7 @@ function AppContent() {
 									onClick={handleClearQueue}
 									aria-label="Clear queue"
 								>
-									<Trash2 className="h-4 w-4 mr-2" aria-hidden="true" />
+									<Trash2 className="h-4 w-4 me-2" aria-hidden="true" />
 									Clear
 								</Button>
 							</div>

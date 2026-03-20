@@ -93,6 +93,9 @@ const baseFileSystem: IFileSystemRepository = {
 	async getAppDataDir() {
 		return "/mock/app-data";
 	},
+	async getTempDir() {
+		return "/mock/temp";
+	},
 	async dirname(path: string) {
 		const normalized = path.replace(/\\/g, "/");
 		const idx = normalized.lastIndexOf("/");
@@ -417,7 +420,7 @@ describe("ProcessJobUseCase", () => {
 		const inputFlagIndex = args.indexOf("-i");
 		expect(inputFlagIndex).toBeGreaterThan(-1);
 		expect(args[inputFlagIndex + 1]).toBe(
-			"/output/.retropacker_temp/unknown-bin.cue",
+			"/mock/temp/retropacker_temp/compress/unknown-bin/unknown-bin.cue",
 		);
 		job.dispose();
 	});
@@ -772,7 +775,7 @@ describe("ProcessJobUseCase arg building", () => {
 		const inputFlagIndex = args.indexOf("-i");
 		expect(inputFlagIndex).toBeGreaterThan(-1);
 		expect(args[inputFlagIndex + 1]).toBe(
-			"/output/.retropacker_temp/bin-temp-cue.cue",
+			"/mock/temp/retropacker_temp/compress/bin-temp-cue/bin-temp-cue.cue",
 		);
 		job.dispose();
 	});
@@ -927,6 +930,28 @@ describe("ProcessJobUseCase failures", () => {
 		expect(job.status.value).toBe("failed");
 		expect(job.errorMessage.value).toBe(
 			"Permission Denied: Lacking rights to execute the sidecar binary.",
+		);
+		job.dispose();
+	});
+
+	it("maps generic sidecar spawn exceptions to actionable message", async () => {
+		const job = createJob("fail-spawn-generic");
+		const commandExecutor = new TestCommandExecutor(async () => {
+			throw { message: "Failed to spawn process" };
+		});
+
+		const useCase = new ProcessJobUseCase({
+			commandExecutor,
+			databaseRepository: baseDatabaseRepository,
+			notificationService: createNotificationServiceSpy().service,
+			fileSystem: baseFileSystem,
+		});
+
+		await useCase.execute(job, "/output", "compress", settings);
+
+		expect(job.status.value).toBe("failed");
+		expect(job.errorMessage.value).toBe(
+			"Failed to start sidecar process. Ensure bundled sidecars are present and allowed by shell permissions.",
 		);
 		job.dispose();
 	});

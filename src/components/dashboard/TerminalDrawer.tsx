@@ -111,7 +111,7 @@ export function TerminalDrawer({ job, isOpen, onClose }: TerminalDrawerProps) {
 		<>
 			{isOpen && (
 				<div
-					className="fixed inset-0 bg-black/10 z-40 transition-opacity duration-200"
+					className="fixed inset-0 bg-foreground/10 z-40 transition-opacity duration-200"
 					onClick={onClose}
 					aria-hidden="true"
 				/>
@@ -123,7 +123,7 @@ export function TerminalDrawer({ job, isOpen, onClose }: TerminalDrawerProps) {
 					isOpen ? "translate-y-0" : "translate-y-full pointer-events-none",
 				)}
 			>
-				<div className="flex items-center justify-between px-4 py-2 bg-muted/40 border-b border-border">
+				<div className="flex items-center justify-between px-4 py-2 bg-muted border-b border-border">
 					<div className="flex items-center gap-2 text-sm font-mono text-muted-foreground">
 						<Terminal className="h-4 w-4" />
 						<span>{job ? `Terminal: ${job.filename}` : "Terminal"}</span>

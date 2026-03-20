@@ -12,6 +12,20 @@ export function getBasename(path: string): string {
 	return lastDot > 0 ? basenameWithExt.slice(0, lastDot) : basenameWithExt;
 }
 
+export function getExtension(filename: string): string {
+	const lastDot = filename.lastIndexOf(".");
+	return lastDot > 0 ? filename.slice(lastDot + 1).toLowerCase() : "";
+}
+
+export function pluralize(
+	count: number,
+	singular: string,
+	plural?: string,
+): string {
+	if (count === 1) return `${count} ${singular}`;
+	return `${count} ${plural ?? `${singular}s`}`;
+}
+
 export function formatDuration(seconds: number): string {
 	if (!Number.isFinite(seconds) || seconds < 0) return "0s";
 	const h = Math.floor(seconds / 3600);

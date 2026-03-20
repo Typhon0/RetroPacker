@@ -13,6 +13,7 @@ import {
 import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { isNintendoSystem } from "@/domain/types/platform.types";
 import { DetectSystemUseCase } from "@/domain/usecases/DetectSystemUseCase";
 import { cn, formatFileSize } from "@/lib/utils";
@@ -224,7 +225,8 @@ export function InfoViewer() {
 							rawOutput += `Version: ${ver}\n`;
 
 							// Estimate compression ratio
-							const ratio = (size / Number(totalBytes)) * 100;
+							const ratio =
+								totalBytes > 0 ? (size / Number(totalBytes)) * 100 : 0;
 							chdStats = {
 								logicalSize: `${totalBytes} bytes`,
 								chdSize: `${size} bytes`,
@@ -438,7 +440,7 @@ export function InfoViewer() {
 			{isLoading && (
 				<div className="surface-card flex items-center justify-center p-8">
 					<Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-					<span className="ml-2 text-sm text-muted-foreground">
+					<span className="ms-2 text-sm text-muted-foreground">
 						Analyzing file and fetching metadata...
 					</span>
 				</div>
@@ -462,9 +464,9 @@ export function InfoViewer() {
 									<span className="break-all">{gameInfo.filename}</span>
 								</div>
 								{gameInfo.system && (
-									<span className="px-3 py-1 bg-secondary text-secondary-foreground text-xs rounded-full font-medium whitespace-nowrap">
+									<StatusBadge variant="secondary">
 										{gameInfo.system}
-									</span>
+									</StatusBadge>
 								)}
 							</CardTitle>
 						</CardHeader>
@@ -701,7 +703,7 @@ export function InfoViewer() {
 													SHA1 Checksum
 												</span>
 											</div>
-											<p className="text-[10px] font-mono bg-muted p-2 rounded break-all select-all">
+											<p className="text-xs font-mono bg-muted p-2 rounded break-all select-all">
 												{gameInfo.chdStats.sha1}
 											</p>
 										</div>
@@ -721,11 +723,11 @@ export function InfoViewer() {
 										>
 											{showRaw ? (
 												<>
-													<ChevronUp className="h-3 w-3 mr-1" /> Hide Raw Output
+													<ChevronUp className="h-3 w-3 me-1" /> Hide Raw Output
 												</>
 											) : (
 												<>
-													<ChevronDown className="h-3 w-3 mr-1" /> Show Raw
+													<ChevronDown className="h-3 w-3 me-1" /> Show Raw
 													Output
 												</>
 											)}

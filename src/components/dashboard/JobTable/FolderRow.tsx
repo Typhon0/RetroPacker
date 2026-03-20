@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/row-actions";
 import { TableCell, TableRow } from "@/components/ui/table";
 import type { Platform } from "@/domain/types/platform.types";
+import { pluralize } from "@/lib/utils";
 import { PlatformSelector } from "../PlatformSelector";
 import type { TreeNode } from "./JobTreeBuilder";
 
@@ -56,7 +57,7 @@ function FolderRowComponent({
 		>
 			<TableCell
 				className="py-2"
-				style={{ paddingLeft: `${depth * 16 + 8}px` }}
+				style={{ paddingInlineStart: `${depth * 16 + 8}px` }}
 			>
 				{isExpanded ? (
 					<ChevronDown className="h-4 w-4" />
@@ -69,7 +70,7 @@ function FolderRowComponent({
 					<Folder className="h-4 w-4 text-info" />
 					<span className="font-medium">{node.name}</span>
 					<span className="text-muted-foreground text-xs">
-						({totalItems} items)
+						({pluralize(totalItems, "item")})
 					</span>
 				</div>
 			</TableCell>
@@ -83,7 +84,7 @@ function FolderRowComponent({
 					/>
 				)}
 			</TableCell>
-			<TableCell className="text-right py-2">
+			<TableCell className="text-end py-2">
 				<RowActions
 					actions={createFolderRowActions({
 						name: node.name,
